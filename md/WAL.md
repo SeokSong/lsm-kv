@@ -147,6 +147,13 @@ TOMBSTONE: | CC CC CC CC | 02 | 0C | 00 00 00 00 | 12 key bytes |
 
 ## Open questions
 
+// thinking
+// Should we take ownership over record?
+// If encode takes ownership, after the function is over it will go out of scope
+// If we borrow it the memory will stay after the function
+// so the question is do we need this address still after the function?
+// yes because all encoding does is make this address readable for our disk, this does not mean were done with the address yet
+
 ## See also
 
 DESIGN.md, section 6

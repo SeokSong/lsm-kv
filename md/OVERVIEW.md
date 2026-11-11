@@ -35,7 +35,7 @@ Discord LSM based ScyllaDB with storage facing rust services  here: https://disc
 ## How it works (big picture)
 
 <!-- The write path and read path in a few lines. A small ASCII diagram is fine. -->
-![alt text](image-4.png)
+![alt text](image-5.png)
 Request will first check the memtable, if not found in memtable we will check the DB for the request
 - Get 
     - Check the active memtable to see if key exist
