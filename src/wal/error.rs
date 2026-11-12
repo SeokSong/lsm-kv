@@ -5,9 +5,17 @@ pub enum SizeField {
 }
 
 #[derive(Debug)]
+pub enum CorruptionReason {
+    CrcMismatch,
+    UnknownType,
+    TombstoneValue,
+    LengthLimit(SizeField),
+}
+
+#[derive(Debug)]
 pub enum WalError {
     Corruption {
-        offset: u64,
+        reason: CorruptionReason,
     },
     Io(std::io::Error),
     Size {
