@@ -1,6 +1,6 @@
 # Write-Ahead Log (WAL)
 
-**Status:** In progress. Encode, decode, and append + fsync are done and tested (24 tests). Replay is next.
+**Status:** Done for v1 (single file). Encode, decode, append + fsync, and replay are done and tested (30 tests). Segments come with flush.
 
 ## Purpose
 
@@ -82,14 +82,15 @@ We are safe to delete a segment after it has been written to the manifest and fs
 - Torn writes
     - We should be able to tell by the lengths by checking the number of bytes left in the file verse the number o bytes the length tells us to expect. We should see that the written lenght does not match the length so we will cut the WAL off at the end of the last valid record
     - decode returns `Ok(None)` when there aren't enough bytes for the header or for the full record
-    - Replay (next) will truncate the file at the end of the last valid record
+    - Replay truncates the file at the end of the last valid record (`set_len` + `sync_all`), so new appends don't land after the torn bytes
 
 - Mid log corruption 
     - We will use CRC to check for corruption of our data
     - if CRC fails
         - stop and return corruption error (v1)
         - WALRecoveryMode (v2)
-    - decode returns `Err(Corruption { reason })`
+    - decode returns `Err(reason)`, replay turns it into `WalError::Corruption { offset, reason }` where offset is where the bad record starts in the file
+    - Replay leaves the file untouched on corruption so the bad bytes can be inspected
 
 | CorruptionReason | When |
 |---|---|
@@ -117,19 +118,22 @@ We are safe to delete a segment after it has been written to the manifest and fs
     - `Op::Put { value: Vec<u8> }` / `Op::Delete`
 - Codec
     - `encode(record: &Record) -> Result<Vec<u8>, WalError>`
-    - `decode(encoded_record: &[u8]) -> Result<Option<(Record, usize)>, WalError>`
+    - `decode(encoded_record: &[u8]) -> Result<Option<(Record, usize)>, CorruptionReason>`
         - `Ok(Some((record, bytes_used)))`: valid record
         - `Ok(None)`: torn tail, not enough bytes
-        - `Err(Corruption { reason })`: bytes are there but wrong
+        - `Err(reason)`: bytes are there but wrong. decode only sees a buffer, so it returns just the reason
 - WalWriter
     - `WalWriter::open(path: &Path) -> Result<WalWriter, WalError>`: creates the file if needed, appends to the end otherwise
     - `append(&mut self, record: &Record) -> Result<(), WalError>`: durable when it returns Ok
-- Replay (next)
+- Replay
+    - `replay(path: &Path) -> Result<Vec<Record>, WalError>`
     - Replay will return a vector for V1 and a iterator for v2 with V1 vs V2 benchmarks
-    - Torn tail is not an error, replay returns the records before it as `Ok(...)`
-    - Corruption returns `Err(...)` with the reason and the file offset of the bad record
+    - Missing file returns an empty vector (first startup)
+    - Torn tail is not an error, replay truncates it and returns the records before it as `Ok(...)`
+    - Corruption returns `Err(WalError::Corruption { offset, reason })`
+    - Startup order: `replay(path)` first, then `WalWriter::open(path)`
 - WalError
-    - `Corruption { reason }`, `Io(std::io::Error)`, `Size { .. }`, `Failed`
+    - `Corruption { offset, reason }`, `Io(std::io::Error)`, `Size { .. }`, `Failed`
     - `From<std::io::Error>` lets `?` turn I/O errors into `WalError::Io`
 
 ## Tests
@@ -147,13 +151,14 @@ We are safe to delete a segment after it has been written to the manifest and fs
     - Failed writer refuses appends
     - Open in a missing directory returns `Io`
 
-- Replay (next)
-    1. Write, close, reopen, replay returns the records
-    2. Torn write test
-        - write N records, truncate the file at every possible byte offset, replay each one and check that you get back exactly the records before the cut 
-    3. After a torn tail, append a new record and replay returns old records + the new one
-    4. Bit flip in middle of log returns corruption error with the right offset
-    5. Empty WAL replay
+- Replay (`src/wal/replay/tests.rs`): 6 tests, done
+    1. Missing file returns empty and doesn't create the file
+    2. Empty WAL replay
+    3. Write records, replay returns them in order
+    4. Torn write test
+        - write 3 records, cut the file at every possible byte offset, replay each one and check that you get back exactly the records before the cut and the file is truncated to the last complete record
+    5. After a torn tail, append a new record and replay returns old records + the new one
+    6. Bit flip in middle of log returns corruption error with the right offset, file left untouched
 
 - Integration Test
     1. Test put(key, value)
@@ -163,7 +168,6 @@ We are safe to delete a segment after it has been written to the manifest and fs
 
 ## Open questions
 
-- Corruption errors require a offset. This will be handled by the replay instead of the WAL, since decode only sees a buffer
 - A corrupted length that is still under the limit (e.g. valueLen 2000 -> 3000) at the end of the file looks exactly like a torn tail, so decode returns `Ok(None)`. Covered by `decode_corrupt_in_range`
 - If the last record has all its bytes but fails the CRC, is it a torn tail or corruption?
 - Rerun the fsync numbers on Linux
@@ -173,6 +177,8 @@ We are safe to delete a segment after it has been written to the manifest and fs
 
 - encode borrows the record (`&Record`). After encoding, put still needs the same record to insert into the memtable
 - Record is a struct with the key plus an `Op` enum, so `record.key` is always available and Put/Delete are named variants
+- Corruption errors require a offset. This is handled by the replay instead of decode, since decode only sees a buffer. decode returns `CorruptionReason`, replay adds the offset
+- Replay reads the whole file into memory for v1. The WAL is at most one memtable's worth
 
 ## See also
 

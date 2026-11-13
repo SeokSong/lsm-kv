@@ -53,7 +53,7 @@ pub fn encode(record: &Record) -> Result<Vec<u8>, WalError> {
     Ok(encoded_record)
 }
 
-pub fn decode(encoded_record: &[u8]) -> Result<Option<(Record, usize)>, WalError> {
+pub fn decode(encoded_record: &[u8]) -> Result<Option<(Record, usize)>, CorruptionReason> {
     //Check for torn writes
     if encoded_record.len() < HEADER_LEN {
         return Ok(None);
@@ -71,14 +71,10 @@ pub fn decode(encoded_record: &[u8]) -> Result<Option<(Record, usize)>, WalError
 
     //Check to ensure key_len and value_len are within our MAX_KEY_LEN and MAX_VALUE_LEN
     if key_len > MAX_KEY_LEN {
-        return Err(WalError::Corruption {
-            reason: CorruptionReason::LengthLimit(SizeField::Key),
-        });
+        return Err(CorruptionReason::LengthLimit(SizeField::Key));
     };
     if value_len > MAX_VALUE_LEN {
-        return Err(WalError::Corruption {
-            reason: CorruptionReason::LengthLimit(SizeField::Value),
-        });
+        return Err(CorruptionReason::LengthLimit(SizeField::Value));
     };
 
     //Check for torn writes
@@ -89,9 +85,7 @@ pub fn decode(encoded_record: &[u8]) -> Result<Option<(Record, usize)>, WalError
     let crc_check = crc32fast::hash(&encoded_record[4..record_len]);
 
     if crc_check != crc {
-        return Err(WalError::Corruption {
-            reason: CorruptionReason::CrcMismatch,
-        });
+        return Err(CorruptionReason::CrcMismatch);
     }
 
     //Type byte is only 01 or 02 anything else is Corruption
@@ -102,16 +96,12 @@ pub fn decode(encoded_record: &[u8]) -> Result<Option<(Record, usize)>, WalError
         }
         DELETE_BYTE_TYPE => {
             if value_len != TOMBSTONE_VALUE_LEN {
-                return Err(WalError::Corruption {
-                    reason: CorruptionReason::TombstoneValue,
-                });
+                return Err(CorruptionReason::TombstoneValue);
             };
             Op::Delete
         }
         _ => {
-            return Err(WalError::Corruption {
-                reason: CorruptionReason::UnknownType,
-            });
+            return Err(CorruptionReason::UnknownType);
         }
     };
 

@@ -239,9 +239,7 @@ fn decode_key_len_too_big() {
 
     assert!(matches!(
         result,
-        Err(WalError::Corruption {
-            reason: CorruptionReason::LengthLimit(SizeField::Key),
-        })
+        Err(CorruptionReason::LengthLimit(SizeField::Key))
     ));
 }
 
@@ -265,9 +263,7 @@ fn decode_value_len_too_big() {
 
     assert!(matches!(
         result,
-        Err(WalError::Corruption {
-            reason: CorruptionReason::LengthLimit(SizeField::Value),
-        })
+        Err(CorruptionReason::LengthLimit(SizeField::Value))
     ));
 }
 
@@ -290,12 +286,7 @@ fn decode_unknown_type_byte() {
 
     let result = decode(&encoded_record);
 
-    assert!(matches!(
-        result,
-        Err(WalError::Corruption {
-            reason: CorruptionReason::UnknownType,
-        })
-    ));
+    assert!(matches!(result, Err(CorruptionReason::UnknownType)));
 }
 
 #[test]
@@ -318,12 +309,7 @@ fn decode_tombstone_with_value() {
 
     let result = decode(&encoded_record);
 
-    assert!(matches!(
-        result,
-        Err(WalError::Corruption {
-            reason: CorruptionReason::TombstoneValue,
-        })
-    ));
+    assert!(matches!(result, Err(CorruptionReason::TombstoneValue)));
 }
 
 #[test]
@@ -348,12 +334,7 @@ fn decode_bit_flip() {
 
         let result = decode(&flipped_record);
 
-        assert!(matches!(
-            result,
-            Err(WalError::Corruption {
-                reason: CorruptionReason::CrcMismatch,
-            })
-        ));
+        assert!(matches!(result, Err(CorruptionReason::CrcMismatch)));
     }
 }
 
@@ -376,12 +357,7 @@ fn decode_byte_type_bit_flip() {
 
     let result = decode(&encoded_record);
 
-    assert!(matches!(
-        result,
-        Err(WalError::Corruption {
-            reason: CorruptionReason::CrcMismatch,
-        })
-    ));
+    assert!(matches!(result, Err(CorruptionReason::CrcMismatch)));
 }
 
 #[test]

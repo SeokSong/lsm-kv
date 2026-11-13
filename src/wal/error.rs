@@ -14,7 +14,9 @@ pub enum CorruptionReason {
 
 #[derive(Debug)]
 pub enum WalError {
+    // offset is where the bad record starts in the WAL file
     Corruption {
+        offset: u64,
         reason: CorruptionReason,
     },
     Io(std::io::Error),
