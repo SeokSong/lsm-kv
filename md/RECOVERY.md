@@ -1,6 +1,6 @@
 # Crash Recovery
 
-**Status:** Designing. The WAL side (torn tail, corruption, fsync failure) is built at the record level, replay is next.
+**Status:** In progress. WAL replay is done (torn tail truncation, corruption with offset). Manifest and SSTable cleanup come later.
 
 ## Guarantee
 
@@ -13,10 +13,12 @@
 <!-- Numbered, in order: manifest, stray files, WAL replay, ... -->
 1. Read the manifest (later)
 2. Delete any SSTable file the manifest doesn't list (later)
-3. Replay the WAL into an empty memtable
+3. Replay the WAL into an empty memtable (`replay(path)`, done)
+    - Missing WAL: nothing to replay
     - Decode records one at a time
     - Torn tail: stop, truncate the file at the end of the last valid record
-    - Corruption in the middle: stop and return a corruption error with the file offset
+    - Corruption in the middle: stop and return a corruption error with the file offset, file left untouched
+4. Open the WAL for new writes (`WalWriter::open(path)`), only after replay so new records don't land after a torn tail
 
 ## Failure scenarios
 
@@ -40,7 +42,7 @@
 <!-- How will you simulate crashes? Truncation, kill -9, fault injection? -->
 - Done: decode at every truncation point returns `Ok(None)` and never panics
 - Done: bit flips return `CrcMismatch`, failed writer refuses appends
-- Next: replay tests on real files (truncate at every offset, append after a torn tail, corruption offset)
+- Done: replay on real files, cut at every byte offset (records and file length checked), append after a torn tail, corruption offset
 - Later: kill -9 during a write loop, then reopen and check every acked write
 
 ## Open questions

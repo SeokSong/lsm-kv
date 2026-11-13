@@ -59,7 +59,7 @@ The user can request the live feed but for now that is out of scope
 
 | Component | One-line summary | Status | Doc |
 |---|---|---|---|
-| WAL | Append-only log on disk, every put/delete is written + fsynced here first so the memtable can be rebuilt after a crash | In progress: encode, decode, append + fsync done (24 tests). Replay next | [WAL.md](WAL.md) |
+| WAL | Append-only log on disk, every put/delete is written + fsynced here first so the memtable can be rebuilt after a crash | Done for v1: encode, decode, append + fsync, replay (30 tests). Segments come with flush | [WAL.md](WAL.md) |
 | Memtable | Sorted in-memory map of recent writes (values and tombstones) | Not started | [MEMTABLE.md](MEMTABLE.md) |
 | SSTable | Immutable sorted file on disk: data blocks, index, bloom filter, footer | Designing | [SSTABLE.md](SSTABLE.md) |
 | Bloom filter | Per-SSTable bit array that says "definitely not here" to skip disk reads | Designing | [BLOOM_FILTER.md](BLOOM_FILTER.md) |
@@ -77,10 +77,10 @@ The user can request the live feed but for now that is out of scope
 - Done
     - WAL record format: encode + decode with CRC-32, size limits, torn tail and corruption detection
     - WalWriter: append + fsync every write, failed state after a write or fsync error
-    - 24 unit tests
+    - WAL replay: decodes records in order, truncates a torn tail, reports corruption with the file offset
+    - 30 unit tests, CI on Linux and macOS
     - Benchmarks on Mac: crc32fast is 3-4x faster than crc32c, fsync is ~99.9% of a put (~3 ms, ~350 appends/s)
 - Next
-    - WAL replay: read the file, decode in a loop, truncate a torn tail, add the file offset to corruption errors
     - Memtable
     - put / get / delete on top of WAL + memtable
 
@@ -88,8 +88,8 @@ The user can request the live feed but for now that is out of scope
 
 | Week | Goal | Done? |
 |---|---|---|
-| 0 | Rust basics, repo, CI, design doc | Mostly (no CI yet) |
-| 1 | Memtable + WAL + replay | In progress (WAL encode/decode/append done) |
+| 0 | Rust basics, repo, CI, design doc | Done |
+| 1 | Memtable + WAL + replay | In progress (WAL + replay done, memtable next) |
 | 2 | SSTable writer/reader + index | |
 | 3 | Read path, tombstones, bloom filters | |
 | 4 | Compaction (size-tiered first), atomic file swap | |
