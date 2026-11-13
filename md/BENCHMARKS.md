@@ -36,6 +36,7 @@
 - MacBook Pro, Apple Silicon (aarch64), macOS
 - `--release` builds
 - CRC: criterion 0.8.2, `benchmark/crc.rs`, run with `cargo bench --bench crc`
+- Memtable get: criterion, `benchmark/memtable_get.rs`, run with `cargo bench --bench memtable_get`
 - Write + fsync: quick timed loop of 300 appends of a 2,022 byte record, `write_all` + `sync_data` per append. Not in the repo yet, should become a criterion bench in `benchmark/`
 - macOS `sync_data` = `F_FULLFSYNC`, which is known to be slow. Final numbers come from Linux
 
@@ -71,6 +72,30 @@ Short run (0.5 s per case), rough numbers.
 - fsync is ~99.9% of a put. The CRC choice and encode speed don't change put throughput
 - At ~350/s, live F1 ingest (~1.4 puts/s) is fine, but replaying a race at max speed (~6,000 puts) takes ~17 s waiting on fsync
 - Group commit is the next thing worth measuring
+
+### Memtable get: borrow vs copy vs allocate + copy (2026-11-13, Mac)
+
+Question: `Store::get` returns an owned `Vec<u8>` (one ~2 KB copy per read). Is the allocation more expensive than the copy itself?
+
+- 16,384 entries x 2,000 byte values (one full 32 MiB memtable), lookups jump around the map
+- `benchmark/memtable_get.rs`, short run (3 s per case)
+
+| Case | Time per get |
+|---|---|
+| Borrow only (`Lookup::Found(&[u8])`, no copy) | ~113 ns |
+| Copy into a reused buffer (copy, no allocation) | ~362 ns |
+| `to_vec` (allocation + copy, what `Store::get` does) | ~312 ns |
+
+- Allocation is not the cost: `to_vec` was no slower than copying into a reused buffer (the gap is noise)
+- The ~200-250 ns extra is reading 2 KB of value bytes from RAM. A 32 MiB memtable doesn't fit in the CPU cache, so the copy waits on memory
+- The borrow case never reads the value bytes, so it flatters zero-copy. A real caller would read those bytes too and pay most of that memory cost anyway
+- Owned values stay for now. Later, SSTable reads (disk, us to ms) will make ~0.3 us per copy even less significant
+
+Revisit zero-copy reads when:
+- We're doing hundreds of thousands or millions of reads per second
+- Profiling shows allocation or memory-copy overhead is significant
+- We're repeatedly copying the same payload through multiple layers
+- The workload is latency-sensitive
 
 ## See also
 

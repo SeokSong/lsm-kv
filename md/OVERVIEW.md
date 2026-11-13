@@ -69,6 +69,7 @@ The user can request the live feed but for now that is out of scope
 | Crash recovery | Rebuilds state on startup from the manifest + WAL replay | Designing | [RECOVERY.md](RECOVERY.md) |
 | Benchmarks | Microbenchmarks now, F1 replay and YCSB-style workloads later | In progress: CRC-32 and write + fsync measured on Mac | [BENCHMARKS.md](BENCHMARKS.md) |
 | Config | Tuning settings in TOML (`config/*.toml`), format constants stay in code | Done for memtable settings (8 tests) | [CONFIG.md](CONFIG.md) |
+| Store | Public API: open (replay), put / delete (WAL then memtable), get | In progress: memtable-only reads done (10 tests). Flush + SSTables next | [STORE.md](STORE.md) |
 
 <!-- Status ideas: Not started / Designing / In progress / Done / Tested / Benchmarked -->
 
@@ -81,23 +82,26 @@ The user can request the live feed but for now that is out of scope
     - WAL replay: decodes records in order, truncates a torn tail, reports corruption with the file offset
     - Memtable: BTreeMap of key -> Op, Lookup enum (Found / Deleted / NotFound), running size counter, sorted iter and range
     - Config: TOML tuning settings (memtable flush threshold, max frozen memtables), default + 16/64 MiB benchmark profiles
-    - 50 unit tests, CI on Linux and macOS
-    - Benchmarks on Mac: crc32fast is 3-4x faster than crc32c, fsync is ~99.9% of a put (~3 ms, ~350 appends/s)
+    - Store: open (replay, then WAL writer), put / delete (WAL first, then memtable), get from the memtable
+    - 60 unit tests, CI on Linux and macOS
+    - Benchmarks on Mac: crc32fast is 3-4x faster than crc32c, fsync is ~99.9% of a put (~3 ms, ~350 appends/s), memtable get allocation costs nothing measurable (copy ~0.2 us per 2 KB)
 - Next
-    - Store: put / get / delete on top of WAL + memtable, replay on open
-    - Background flush thread, bounded frozen memtable queue, WAL segments
+    - SSTable writer + reader (week 2)
+    - Background flush thread, bounded frozen memtable queue, WAL segments, minimal manifest (week 3)
 
 ## Milestones
 
-| Week | Goal | Done? |
-|---|---|---|
-| 0 | Rust basics, repo, CI, design doc | Done |
-| 1 | Memtable + WAL + replay | In progress (WAL + replay + memtable done, store wiring next) |
-| 2 | SSTable writer/reader + index | |
-| 3 | Read path, tombstones, bloom filters | |
-| 4 | Compaction (size-tiered first), atomic file swap | |
-| 5 | Manifest, crash tests, property tests | |
-| 6 | Benchmarks, compare to RocksDB/sled, README | |
+Revised 2026-11-13: background flush pulls WAL segments and the manifest into week 3, and the ingest layer gets its own slot in week 6.
+
+| Week | Dates | Goal | Done? |
+|---|---|---|---|
+| 0 | Nov 3-9 | Rust basics, repo, CI, design doc | Done |
+| 1 | Nov 10-16 | WAL + replay, memtable, store (open / put / delete / get) | Done |
+| 2 | Nov 17-23 | SSTable writer + reader: data blocks, index, footer, block CRC, point lookup | |
+| 3 | Nov 24-30 | Background flush, frozen memtable queue, WAL segments, minimal manifest, read path across memtables + SSTables, bloom filters | |
+| 4 | Dec 1-7 | Compaction (size-tiered), atomic swap through the manifest, dropping tombstones | |
+| 5 | Dec 8-14 | Scan (merge iterator), crash tests (kill -9), property tests, recovery cleanup | |
+| 6 | Dec 15-21 | Ingest (FastF1 -> Parquet -> keys / values), benchmarks on Linux, group commit, RocksDB / sled comparison, README | |
 
 ## Full design
 

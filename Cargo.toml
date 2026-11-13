@@ -17,3 +17,8 @@ tempfile = "3.27.0"
 name = "crc"
 path = "benchmark/crc.rs"
 harness = false
+
+[[bench]]
+name = "memtable_get"
+path = "benchmark/memtable_get.rs"
+harness = false
