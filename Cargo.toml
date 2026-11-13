@@ -9,6 +9,7 @@ crc32fast = "1.5.5"
 
 [dev-dependencies]
 criterion = "0.8.2"
+tempfile = "3.27.0"
 
 [[bench]]
 name = "crc"
