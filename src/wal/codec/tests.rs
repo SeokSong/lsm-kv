@@ -130,7 +130,7 @@ fn encode_value_too_big() {
     ));
 }
 
-// Recompute the CRC after a test edits the bytes, so decode gets past the
+// recompute the CRC after a test edits the bytes, so decode gets past the
 // CRC check and reaches the check the test is aiming at
 fn reseal_crc(encoded_record: &mut [u8]) {
     let checksum = crc32fast::hash(&encoded_record[4..]);
@@ -208,7 +208,7 @@ fn decode_every_truncation() {
 
     let encoded_record: Vec<u8> = encode(&record).unwrap();
 
-    // Every possible crash point: inside the header (n < 10) and inside the body (n >= 10)
+    // every possible crash point: inside the header (n < 10) and inside the body (n >= 10)
     for n in 0..encoded_record.len() {
         let result = decode(&encoded_record[..n]);
         assert!(
@@ -234,7 +234,7 @@ fn decode_key_len_too_big() {
     let mut encoded_record: Vec<u8> = encode(&record).unwrap();
     encoded_record[5] = (MAX_KEY_LEN + 1) as u8;
 
-    // The limit check runs before the CRC check, so no reseal is needed
+    // the limit check runs before the CRC check, so no reseal is needed
     let result = decode(&encoded_record);
 
     assert!(matches!(
@@ -311,7 +311,7 @@ fn decode_tombstone_with_value() {
         },
     };
 
-    // A Put record relabeled as a Delete still carries its 2000-byte value
+    // a Put record relabeled as a Delete still carries its 2000-byte value
     let mut encoded_record: Vec<u8> = encode(&record).unwrap();
     encoded_record[4] = DELETE_BYTE_TYPE;
     reseal_crc(&mut encoded_record);
@@ -341,7 +341,7 @@ fn decode_bit_flip() {
 
     let encoded_record: Vec<u8> = encode(&record).unwrap();
 
-    // One flip in the key, one in the value
+    // one flip in the key, one in the value
     for index in [12, 1000] {
         let mut flipped_record: Vec<u8> = encoded_record.clone();
         flipped_record[index] ^= 0x01;
@@ -370,7 +370,7 @@ fn decode_byte_type_bit_flip() {
         },
     };
 
-    // Turns Put (01) into Delete (02). The CRC must catch it before decode acts on the type
+    // turns Put (01) into Delete (02), the CRC must catch it before decode acts on the type
     let mut encoded_record: Vec<u8> = encode(&record).unwrap();
     encoded_record[4] ^= 0x03;
 
@@ -405,7 +405,7 @@ fn decode_back_to_back_records() {
     let encoded_put: Vec<u8> = encode(&put_record).unwrap();
     let encoded_delete: Vec<u8> = encode(&delete_record).unwrap();
 
-    // Put, then Delete, then the first 5 bytes of another record (a torn tail)
+    // put, then Delete, then the first 5 bytes of another record (a torn tail)
     let mut buffer: Vec<u8> = Vec::new();
     buffer.extend_from_slice(&encoded_put);
     buffer.extend_from_slice(&encoded_delete);
@@ -437,7 +437,7 @@ fn decode_corrupt_in_range() {
         },
     };
 
-    // Known limitation: valueLen corrupted from 2000 to 3000 (still under the limit) at the
+    // known limitation: valueLen corrupted from 2000 to 3000 (still under the limit) at the
     // end of the buffer looks exactly like a torn tail, so decode reports Ok(None), not corruption
     let mut encoded_record: Vec<u8> = encode(&record).unwrap();
     encoded_record[6..10].copy_from_slice(&3000u32.to_le_bytes());

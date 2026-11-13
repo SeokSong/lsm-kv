@@ -11,7 +11,7 @@ This will alos be pairs with a follow up c++ query service that will query the d
 
 <!-- One or two sentences: what lsm-kv is and what problem it solves. -->
 A LSM KV solves the problem of heavy write applications.
-This turns random writes into sequential writes, unlike a b tree that updates pages in place, a LSM will only write to a WAL that then writes the writes in sorted order
+This turns random writes into sequential writes, unlike a b tree that updates pages in place, a LSM will only append to a WAL and keep a sorted memtable in memory. When the memtable is full it gets flushed to disk as a sorted file (SSTable)
 
 
 ## Why I'm building it
@@ -59,34 +59,42 @@ The user can request the live feed but for now that is out of scope
 
 | Component | One-line summary | Status | Doc |
 |---|---|---|---|
-| WAL | | | [WAL.md](WAL.md) |
-| Memtable | | | [MEMTABLE.md](MEMTABLE.md) |
-| SSTable | | | [SSTABLE.md](SSTABLE.md) |
-| Bloom filter | | | [BLOOM_FILTER.md](BLOOM_FILTER.md) |
-| Flush | | | [FLUSH.md](FLUSH.md) |
-| Compaction | | | [COMPACTION.md](COMPACTION.md) |
-| Manifest | | | [MANIFEST.md](MANIFEST.md) |
-| Crash recovery | | | [RECOVERY.md](RECOVERY.md) |
-| Benchmarks | | | [BENCHMARKS.md](BENCHMARKS.md) |
+| WAL | Append-only log on disk, every put/delete is written + fsynced here first so the memtable can be rebuilt after a crash | In progress: encode, decode, append + fsync done (24 tests). Replay next | [WAL.md](WAL.md) |
+| Memtable | Sorted in-memory map of recent writes (values and tombstones) | Not started | [MEMTABLE.md](MEMTABLE.md) |
+| SSTable | Immutable sorted file on disk: data blocks, index, bloom filter, footer | Designing | [SSTABLE.md](SSTABLE.md) |
+| Bloom filter | Per-SSTable bit array that says "definitely not here" to skip disk reads | Designing | [BLOOM_FILTER.md](BLOOM_FILTER.md) |
+| Flush | Writes a full memtable to a new SSTable | Designing | [FLUSH.md](FLUSH.md) |
+| Compaction | Merges SSTables, keeps the newest version of each key | Not started | [COMPACTION.md](COMPACTION.md) |
+| Manifest | List of live SSTables and the current WAL, the source of truth on startup | Designing | [MANIFEST.md](MANIFEST.md) |
+| Crash recovery | Rebuilds state on startup from the manifest + WAL replay | Designing | [RECOVERY.md](RECOVERY.md) |
+| Benchmarks | Microbenchmarks now, F1 replay and YCSB-style workloads later | In progress: CRC-32 and write + fsync measured on Mac | [BENCHMARKS.md](BENCHMARKS.md) |
 
 <!-- Status ideas: Not started / Designing / In progress / Done / Tested / Benchmarked -->
 
 ## Current status
 
 <!-- Where the project is today, and what's next. -->
-
+- Done
+    - WAL record format: encode + decode with CRC-32, size limits, torn tail and corruption detection
+    - WalWriter: append + fsync every write, failed state after a write or fsync error
+    - 24 unit tests
+    - Benchmarks on Mac: crc32fast is 3-4x faster than crc32c, fsync is ~99.9% of a put (~3 ms, ~350 appends/s)
+- Next
+    - WAL replay: read the file, decode in a loop, truncate a torn tail, add the file offset to corruption errors
+    - Memtable
+    - put / get / delete on top of WAL + memtable
 
 ## Milestones
 
 | Week | Goal | Done? |
 |---|---|---|
-| 0 | | |
-| 1 | | |
-| 2 | | |
-| 3 | | |
-| 4 | | |
-| 5 | | |
-| 6 | | |
+| 0 | Rust basics, repo, CI, design doc | Mostly (no CI yet) |
+| 1 | Memtable + WAL + replay | In progress (WAL encode/decode/append done) |
+| 2 | SSTable writer/reader + index | |
+| 3 | Read path, tombstones, bloom filters | |
+| 4 | Compaction (size-tiered first), atomic file swap | |
+| 5 | Manifest, crash tests, property tests | |
+| 6 | Benchmarks, compare to RocksDB/sled, README | |
 
 ## Full design
 

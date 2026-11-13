@@ -23,4 +23,13 @@ pub enum WalError {
         correct_max_size: usize,
         which_field: SizeField,
     },
+    // a write or fsync failed earlier, so this WAL no longer accepts writes
+    Failed,
+}
+
+// lets `?` turn a std::io::Error into a WalError
+impl From<std::io::Error> for WalError {
+    fn from(error: std::io::Error) -> WalError {
+        WalError::Io(error)
+    }
 }
