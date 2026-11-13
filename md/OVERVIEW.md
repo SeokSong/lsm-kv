@@ -60,7 +60,7 @@ The user can request the live feed but for now that is out of scope
 | Component | One-line summary | Status | Doc |
 |---|---|---|---|
 | WAL | Append-only log on disk, every put/delete is written + fsynced here first so the memtable can be rebuilt after a crash | Done for v1: encode, decode, append + fsync, replay (30 tests). Segments come with flush | [WAL.md](WAL.md) |
-| Memtable | Sorted in-memory map of recent writes (values and tombstones) | Not started | [MEMTABLE.md](MEMTABLE.md) |
+| Memtable | Sorted in-memory map of recent writes (values and tombstones) | In progress: BTreeMap memtable done (12 tests). Background flush + frozen queue next | [MEMTABLE.md](MEMTABLE.md) |
 | SSTable | Immutable sorted file on disk: data blocks, index, bloom filter, footer | Designing | [SSTABLE.md](SSTABLE.md) |
 | Bloom filter | Per-SSTable bit array that says "definitely not here" to skip disk reads | Designing | [BLOOM_FILTER.md](BLOOM_FILTER.md) |
 | Flush | Writes a full memtable to a new SSTable | Designing | [FLUSH.md](FLUSH.md) |
@@ -68,6 +68,7 @@ The user can request the live feed but for now that is out of scope
 | Manifest | List of live SSTables and the current WAL, the source of truth on startup | Designing | [MANIFEST.md](MANIFEST.md) |
 | Crash recovery | Rebuilds state on startup from the manifest + WAL replay | Designing | [RECOVERY.md](RECOVERY.md) |
 | Benchmarks | Microbenchmarks now, F1 replay and YCSB-style workloads later | In progress: CRC-32 and write + fsync measured on Mac | [BENCHMARKS.md](BENCHMARKS.md) |
+| Config | Tuning settings in TOML (`config/*.toml`), format constants stay in code | Done for memtable settings (8 tests) | [CONFIG.md](CONFIG.md) |
 
 <!-- Status ideas: Not started / Designing / In progress / Done / Tested / Benchmarked -->
 
@@ -78,18 +79,20 @@ The user can request the live feed but for now that is out of scope
     - WAL record format: encode + decode with CRC-32, size limits, torn tail and corruption detection
     - WalWriter: append + fsync every write, failed state after a write or fsync error
     - WAL replay: decodes records in order, truncates a torn tail, reports corruption with the file offset
-    - 30 unit tests, CI on Linux and macOS
+    - Memtable: BTreeMap of key -> Op, Lookup enum (Found / Deleted / NotFound), running size counter, sorted iter and range
+    - Config: TOML tuning settings (memtable flush threshold, max frozen memtables), default + 16/64 MiB benchmark profiles
+    - 50 unit tests, CI on Linux and macOS
     - Benchmarks on Mac: crc32fast is 3-4x faster than crc32c, fsync is ~99.9% of a put (~3 ms, ~350 appends/s)
 - Next
-    - Memtable
-    - put / get / delete on top of WAL + memtable
+    - Store: put / get / delete on top of WAL + memtable, replay on open
+    - Background flush thread, bounded frozen memtable queue, WAL segments
 
 ## Milestones
 
 | Week | Goal | Done? |
 |---|---|---|
 | 0 | Rust basics, repo, CI, design doc | Done |
-| 1 | Memtable + WAL + replay | In progress (WAL + replay done, memtable next) |
+| 1 | Memtable + WAL + replay | In progress (WAL + replay + memtable done, store wiring next) |
 | 2 | SSTable writer/reader + index | |
 | 3 | Read path, tombstones, bloom filters | |
 | 4 | Compaction (size-tiered first), atomic file swap | |

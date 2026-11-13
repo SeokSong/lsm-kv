@@ -6,6 +6,8 @@ edition = "2024"
 [dependencies]
 crc32c = "0.6.9"
 crc32fast = "1.5.5"
+serde = { version = "1.0.229", features = ["derive"] }
+toml = "1.2.1"
 
 [dev-dependencies]
 criterion = "0.8.2"

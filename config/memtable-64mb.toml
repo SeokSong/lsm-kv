@@ -1,0 +1,4 @@
+# benchmark profile: larger memtable, fewer flushes. unset settings use the defaults
+
+[memtable]
+flush_threshold_bytes = 67_108_864
