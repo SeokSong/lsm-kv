@@ -19,6 +19,7 @@
     - Torn tail: stop, truncate the file at the end of the last valid record
     - Corruption in the middle: stop and return a corruption error with the file offset, file left untouched
 4. Open the WAL for new writes (`WalWriter::open(path)`), only after replay so new records don't land after a torn tail
+- Steps 3 and 4 are `Store::open`, done and tested (reopen after puts / deletes, after a torn tail, with a corrupt WAL)
 
 ## Failure scenarios
 
