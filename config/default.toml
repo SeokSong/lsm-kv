@@ -1,0 +1,7 @@
+# default tuning settings. on-disk format constants (key/value limits, header layout) live in code
+
+[memtable]
+# flush once key + value bytes reach this. 32 MiB, one flush ~ one 32 MB SSTable
+flush_threshold_bytes = 33_554_432
+# frozen memtables allowed to wait for the background flush before put has to wait
+max_frozen = 1
