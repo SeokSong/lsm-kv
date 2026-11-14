@@ -1,6 +1,6 @@
 # Crash Recovery
 
-**Status:** In progress. WAL replay is done (torn tail truncation, corruption with offset). Manifest load and finding obsolete files are done, the Store uses them in the flush PR.
+**Status:** Done for PR 3a. Manifest load, cleanup of unlisted files, SSTables, and WAL segment replay are all wired into `Store::open` and tested at every flush crash point. kill -9 tests come in week 5.
 
 ## Guarantee
 
@@ -11,17 +11,19 @@
 ## Startup steps
 
 <!-- Numbered, in order: manifest, stray files, WAL replay, ... -->
-1. Read the manifest (`Manifest::load`, done). None = new store, but only if there are no `.sst` files either
-2. Delete everything `obsolete_files` returns: unlisted SSTables and WAL segments, `.tmp` files (done, wired in the flush PR, crash table in [FLUSH.md](FLUSH.md)). Must run before any new file is created, since file numbers can be handed out again after a crash
-3. Replay the WAL into an empty memtable (`replay(path)`, done)
+1. Read the manifest (`Manifest::load`). None = new store, but only if there are no `.wal`, `.sst`, or `wal.log` files, otherwise `MissingManifest`
+2. Delete everything `obsolete_files` returns: unlisted SSTables and WAL segments, `.tmp` files (crash table in [FLUSH.md](FLUSH.md)). Must run before any new file is created, since file numbers can be handed out again after a crash
+3. Open every listed SSTable, its size must match the manifest
+4. Replay every listed WAL segment into its own memtable, oldest first (`replay(path)`)
     - Missing WAL: nothing to replay
     - Decode records one at a time
     - Torn tail: stop, truncate the file at the end of the last valid record
     - Corruption in the middle: stop and return a corruption error with the file offset, file left untouched
     - Seqs must strictly increase, a lower or repeated one is `SeqOutOfOrder` corruption
-    - Next seq = last replayed seq + 1 (later: the higher of that and the manifest's last seq)
-4. Open the WAL for new writes (`WalWriter::open(path)`), only after replay so new records don't land after a torn tail
-- Steps 3 and 4 are `Store::open`, done and tested (reopen after puts / deletes, after a torn tail, with a corrupt WAL)
+    - Next seq = the higher of the manifest's last seq and the last replayed seq, plus 1
+5. Open the newest segment for new writes (`WalWriter::open(path)`), only after replay so new records don't land after a torn tail
+6. Flush the older segments' memtables, before taking any write
+- All of it is `Store::open`, see [STORE.md](STORE.md)
 
 ## Failure scenarios
 
@@ -34,6 +36,9 @@
 | fsync or write fails while running | Unknown | Writer marks itself failed, every later append returns `Failed` | Nothing acked is lost, new writes are refused |
 | Valid record with a seq that went backwards | All bytes there, CRC passes | Stop with `Corruption { reason: SeqOutOfOrder }` | Records after it are not replayed |
 | New WAL file created then crash | File's directory entry may be missing | Parent directory is fsynced on create, so the file survives | None |
+| Crash during a flush | Depends on the step, see [FLUSH.md](FLUSH.md) | Unlisted SSTable / segment deleted, listed segments replayed and flushed | None |
+| `MANIFEST` deleted by hand | Store files, no manifest | Open fails with `MissingManifest`, nothing deleted | None, but needs a person |
+| Live SSTable truncated or replaced | Size differs from the manifest | Open fails with `SstSizeMismatch` | Not by itself, open refuses |
 
 ## Why replay is safe
 
@@ -47,6 +52,7 @@
 - Done: decode at every truncation point returns `Ok(None)` and never panics
 - Done: bit flips return `CrcMismatch`, failed writer refuses appends
 - Done: replay on real files, cut at every byte offset (records and file length checked), append after a torn tail, corruption offset
+- Done: a crash before and after every flush step (flush stopped by hand, store dropped, reopened). Checks the files and manifest at the crash, then that nothing is lost and no garbage is left
 - Later: kill -9 during a write loop, then reopen and check every acked write
 
 ## Open questions

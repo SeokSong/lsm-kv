@@ -1,6 +1,6 @@
 # Manifest
 
-**Status:** Done and tested (29 tests): format, save / load, file naming, finding obsolete files. The Store starts using it with WAL segments in the flush PR.
+**Status:** Done and tested (29 tests): format, save / load, file naming, finding obsolete files. Used by the Store since PR 3a.
 
 ## Purpose
 
@@ -122,7 +122,7 @@ one sst:
 
 ## Open questions
 
-- No manifest but `.sst` files in the directory (someone deleted `MANIFEST`): open must fail, not treat it as a new store and delete every SSTable. Check goes into `Store::open` in the flush PR
+- No manifest but `.sst` files in the directory (someone deleted `MANIFEST`): done in PR 3a, open fails with `MissingManifest` and deletes nothing
 - Compaction (week 4) may need a level or tier per SSTable. The version field leaves room for it
 
 ## See also
