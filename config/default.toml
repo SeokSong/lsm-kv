@@ -13,3 +13,9 @@ block_size_bytes = 16_384
 restart_interval = 16
 # bloom filter bits per key, 6 is ~5-6% false positives, 10 is ~1%. 0 turns the filter off
 bloom_bits_per_key = 6
+
+[flush]
+# tries per frozen memtable before the store is marked failed (reads keep working)
+max_attempts = 3
+# wait before the 2nd try, doubles after each failure: 100, 200, 400 ms
+retry_backoff_ms = 100

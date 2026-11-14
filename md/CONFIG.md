@@ -1,6 +1,6 @@
 # Config
 
-**Status:** Done for the memtable and SSTable settings (11 tests). New settings get added as each component needs them.
+**Status:** Done for the memtable, SSTable, and flush settings (12 tests). New settings get added as each component needs them.
 
 ## Purpose
 
@@ -39,6 +39,8 @@
 | `sstable.block_size_bytes` | 16,384 (16 KiB) | Soft target: a block is closed once it reaches this, a bigger value gets a block to itself |
 | `sstable.restart_interval` | 16 | Every Nth entry in a block stores its full key (prefix compression restart point) |
 | `sstable.bloom_bits_per_key` | 6 | Bloom filter bits per key, ~5-6% false positives. 10 is ~1%. 0 turns the filter off |
+| `flush.max_attempts` | 3 | Tries per frozen memtable before the store is marked failed (reads keep working) |
+| `flush.retry_backoff_ms` | 100 | Wait before the 2nd try, doubles after each failure: 100, 200, 400 ms |
 
 - Later: fsync policy (every write / group commit / periodic)
 
@@ -61,7 +63,7 @@
 
 ## Tests
 
-- `src/config/tests.rs`: 11 tests, done
+- `src/config/tests.rs`: 12 tests, done
     - Default values
     - `config/default.toml` matches the code defaults
     - Profiles only override what they set
@@ -70,6 +72,7 @@
     - Zero flush threshold and zero max frozen are rejected
     - Zero block size and zero restart interval are rejected, zero bloom bits is allowed (filter off)
     - Missing file is an Io error
+    - Zero flush attempts is rejected
 
 ## See also
 

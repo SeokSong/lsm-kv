@@ -21,6 +21,8 @@ pub enum StoreError {
     // a flush or manifest save failed earlier, the store no longer accepts writes.
     // reads still work and nothing acked is lost, a restart replays the WAL
     Failed,
+    // close was called, the store no longer accepts writes. reads still work
+    Closed,
 }
 
 impl From<WalError> for StoreError {
