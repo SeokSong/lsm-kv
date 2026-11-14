@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use super::codec::encode;
 use super::error::WalError;
 use super::record::Record;
+use crate::fs_util::sync_parent_dir;
 
 pub struct WalWriter {
     file: File,
@@ -58,14 +59,6 @@ impl WalWriter {
         // sync_data is enough for an append: it flushes the bytes and the new file length
         self.file.sync_data()
     }
-}
-
-fn sync_parent_dir(path: &Path) -> std::io::Result<()> {
-    let parent: &Path = match path.parent() {
-        Some(parent) if !parent.as_os_str().is_empty() => parent,
-        _ => Path::new("."),
-    };
-    File::open(parent)?.sync_all()
 }
 
 #[cfg(test)]

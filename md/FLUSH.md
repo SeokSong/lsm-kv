@@ -18,9 +18,10 @@
     - An empty memtable always takes the put, even one bigger than the threshold (only possible with a tiny test config), otherwise it would swap forever
 - The swap
     1. If the frozen queue is full (`memtable.max_frozen`, default 1), wait on the condvar. Count and time the stall
-    2. Open a new WAL segment (fsync the directory so it survives a crash)
-    3. Move the active memtable into the frozen queue (`Arc<Memtable>`), start an empty one
-    4. Wake the flush thread
+    2. Create a new WAL segment (fsync the directory so it survives a crash)
+    3. Save the manifest with the new segment listed. Only after this can a put go into it, so a segment the manifest doesn't list never holds an acked write
+    4. Move the active memtable into the frozen queue (`Arc<Memtable>`), start an empty one
+    5. Wake the flush thread
 - The put then goes to the new segment + new memtable as usual
 
 ## Steps
@@ -112,7 +113,7 @@ The flush thread takes the oldest frozen memtable and:
 
 ## File naming
 
-- One counter for WAL segments and SSTables, LevelDB style: `000007.wal`, `000008.sst`
+- One counter for WAL segments and SSTables, LevelDB style: `000007.wal`, `000008.sst`, see [MANIFEST.md](MANIFEST.md)
 - File numbers are only names. Newer vs older comes from seqs
 - The manifest stores the next file number and the last seq, see [MANIFEST.md](MANIFEST.md)
 

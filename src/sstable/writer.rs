@@ -4,6 +4,7 @@ use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
 
 use crate::config::SstableConfig;
+use crate::fs_util::sync_parent_dir;
 use crate::wal::Op;
 
 use super::block::BlockBuilder;
@@ -174,12 +175,4 @@ impl SstWriter {
         self.offset += bytes.len() as u64;
         Ok(())
     }
-}
-
-fn sync_parent_dir(path: &Path) -> std::io::Result<()> {
-    let parent: &Path = match path.parent() {
-        Some(parent) if !parent.as_os_str().is_empty() => parent,
-        _ => Path::new("."),
-    };
-    File::open(parent)?.sync_all()
 }
