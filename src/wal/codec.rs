@@ -8,7 +8,8 @@ const _: () = assert!(MAX_KEY_LEN <= u8::MAX as usize);
 const _: () = assert!(MAX_VALUE_LEN <= u32::MAX as usize);
 const PUT_BYTE_TYPE: u8 = 1;
 const DELETE_BYTE_TYPE: u8 = 2;
-const HEADER_LEN: usize = 4 + 1 + 1 + 4; // crc + type + keyLen + valueLen
+// crc + seq + type + keyLen + valueLen
+const HEADER_LEN: usize = 4 + 8 + 1 + 1 + 4;
 
 pub fn encode(record: &Record) -> Result<Vec<u8>, WalError> {
     let key_len = record.key.len();
@@ -43,6 +44,7 @@ pub fn encode(record: &Record) -> Result<Vec<u8>, WalError> {
 
     encoded_record.extend_from_slice(&[0u8; 4]);
 
+    encoded_record.extend_from_slice(&record.seq.to_le_bytes());
     encoded_record.extend_from_slice(&[byte_type]);
     encoded_record.extend_from_slice(&key_len.to_le_bytes());
     encoded_record.extend_from_slice(&value_len.to_le_bytes());
@@ -61,9 +63,10 @@ pub fn decode(encoded_record: &[u8]) -> Result<Option<(Record, usize)>, Corrupti
 
     //Check the header
     let crc: u32 = u32::from_le_bytes(encoded_record[0..4].try_into().unwrap());
-    let byte_type: u8 = encoded_record[4];
-    let key_len: u8 = encoded_record[5];
-    let value_len: u32 = u32::from_le_bytes(encoded_record[6..10].try_into().unwrap());
+    let seq: u64 = u64::from_le_bytes(encoded_record[4..12].try_into().unwrap());
+    let byte_type: u8 = encoded_record[12];
+    let key_len: u8 = encoded_record[13];
+    let value_len: u32 = u32::from_le_bytes(encoded_record[14..18].try_into().unwrap());
     let key_len = key_len as usize;
     let value_len = value_len as usize;
 
@@ -108,6 +111,7 @@ pub fn decode(encoded_record: &[u8]) -> Result<Option<(Record, usize)>, Corrupti
     let key = &encoded_record[HEADER_LEN..HEADER_LEN + key_len];
 
     let record: Record = Record {
+        seq,
         key: key.to_vec(),
         op,
     };

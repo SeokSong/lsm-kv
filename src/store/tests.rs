@@ -102,6 +102,7 @@ fn reopen_after_torn_tail_keeps_working() {
     // crash in the middle of the next append: half a record at the end of the WAL
     let wal_path: PathBuf = dir.path().join(WAL_FILE_NAME);
     let torn_record: Vec<u8> = encode(&Record {
+        seq: 2,
         key: key_b.clone(),
         op: Op::Put { value: vec![2; 50] },
     })
@@ -166,6 +167,8 @@ fn rejected_put_changes_nothing() {
     ));
     // WAL first: the failed append never reached the memtable
     assert_eq!(store.get(&too_long_key).unwrap(), None);
+    // and it didn't use up a seq
+    assert_eq!(store.last_seq(), 0);
 
     // and the store still accepts good writes
     store.put(telemetry_key(12, 1, 1), vec![1; 50]).unwrap();
@@ -194,4 +197,49 @@ fn memtable_full_uses_config_threshold() {
     // 112 + 112 = 224 bytes, at or over 200
     store.put(telemetry_key(12, 2, 1), vec![2; 100]).unwrap();
     assert!(store.memtable_full());
+}
+
+#[test]
+fn seqs_count_up_from_one() {
+    let dir: TempDir = TempDir::new().unwrap();
+    let mut store: Store = Store::open(dir.path(), Config::default()).unwrap();
+    assert_eq!(store.last_seq(), 0);
+
+    store.put(telemetry_key(12, 1, 1), vec![1; 50]).unwrap();
+    store.delete(telemetry_key(12, 1, 1)).unwrap();
+    store.put(telemetry_key(12, 2, 1), vec![2; 50]).unwrap();
+
+    // deletes use a seq too
+    assert_eq!(store.last_seq(), 3);
+    let seqs: Vec<u64> = wal::replay(&dir.path().join(WAL_FILE_NAME))
+        .unwrap()
+        .iter()
+        .map(|record| record.seq)
+        .collect();
+    assert_eq!(seqs, vec![1, 2, 3]);
+}
+
+#[test]
+fn reopen_continues_seqs() {
+    let dir: TempDir = TempDir::new().unwrap();
+
+    let mut store: Store = Store::open(dir.path(), Config::default()).unwrap();
+    store.put(telemetry_key(12, 1, 1), vec![1; 50]).unwrap();
+    store.put(telemetry_key(12, 2, 1), vec![2; 50]).unwrap();
+    drop(store);
+
+    // without this, the first write after a restart would reuse seq 1 and replay would
+    // reject the whole WAL as out of order
+    let mut store: Store = Store::open(dir.path(), Config::default()).unwrap();
+    assert_eq!(store.last_seq(), 2);
+    store.put(telemetry_key(12, 3, 1), vec![3; 50]).unwrap();
+    assert_eq!(store.last_seq(), 3);
+    drop(store);
+
+    let store: Store = Store::open(dir.path(), Config::default()).unwrap();
+    assert_eq!(store.last_seq(), 3);
+    assert_eq!(
+        store.get(&telemetry_key(12, 3, 1)).unwrap(),
+        Some(vec![3; 50])
+    );
 }

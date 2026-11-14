@@ -1,6 +1,6 @@
 # Write-Ahead Log (WAL)
 
-**Status:** Done for v1 (single file). Encode, decode, append + fsync, and replay are done and tested (30 tests). Segments come with flush.
+**Status:** Done for v1 (single file). Encode, decode, append + fsync, and replay are done and tested (34 tests). Every record carries a sequence number. Segments come with flush.
 
 ## Purpose
 
@@ -12,8 +12,9 @@ The purpose of the WAL is to ensure that our writes are durable. The memtable si
 <!-- Byte-by-byte layout, widths, byte order, what the CRC covers. Include an example record. -->
 
 - WAL Record Format: Little Endian
-    - Header: 10 bytes
+    - Header: 18 bytes
         - CRC-32: 4 bytes
+        - seq: 8 bytes (u64)
         - type: 1 byte
         - keyLen: 1 byte
         - valueLen: 4 bytes
@@ -25,8 +26,15 @@ The purpose of the WAL is to ensure that our writes are durable. The memtable si
     - Value: up to 65,536 bytes (fits in valueLen u32)
     - Both are checked at compile time against the field widths
 
+- Sequence number (seq)
+    - Goes up by one on every put or delete, starts at 1, never reused
+    - Across all WAL segments and SSTables a higher seq always means a newer write, whatever order memtables get flushed in (a failed flush can be retried after a newer one, see [FLUSH.md](FLUSH.md))
+    - Compaction needs it to pick the newest version when it merges SSTables
+    - Within one WAL file seqs must strictly increase, replay checks this
+    - Costs 8 bytes per record, ~0.4% of a 2 KB record
+
 - CRC-32
-    - Covers every byte after the CRC field (type, lengths, key, value)
+    - Covers every byte after the CRC field (seq, type, lengths, key, value)
     - Uses crc32fast (standard CRC-32). Tested against Castagnoli (crc32c), crc32fast was 3-4x faster on the Mac, see [BENCHMARKS.md](BENCHMARKS.md)
     - Encode writes 4 zero bytes, appends the rest, then fills in the CRC
 
@@ -39,8 +47,8 @@ The purpose of the WAL is to ensure that our writes are durable. The memtable si
 | Record | Bytes |
 |---|---|
 | Key | `01 \| 00 2C FD DC \| 00 05 \| 00 0C \| 03 \| 00 01` |
-| PUT (2,022 bytes) | `CC CC CC CC \| 01 \| 0C \| D0 07 00 00 \| 12 key bytes \| 2,000 value bytes` |
-| TOMBSTONE (22 bytes) | `CC CC CC CC \| 02 \| 0C \| 00 00 00 00 \| 12 key bytes` |
+| PUT seq 7 (2,030 bytes) | `CC CC CC CC \| 07 00 00 00 00 00 00 00 \| 01 \| 0C \| D0 07 00 00 \| 12 key bytes \| 2,000 value bytes` |
+| TOMBSTONE seq 8 (30 bytes) | `CC CC CC CC \| 08 00 00 00 00 00 00 00 \| 02 \| 0C \| 00 00 00 00 \| 12 key bytes` |
 
 ## fsync policy
 
@@ -98,6 +106,7 @@ We are safe to delete a segment after it has been written to the manifest and fs
 | `CrcMismatch` | Stored CRC doesn't match the bytes |
 | `UnknownType` | Type byte isn't 01 or 02 (checked after the CRC) |
 | `TombstoneValue` | Type 02 with valueLen > 0 |
+| `SeqOutOfOrder` | Valid record whose seq isn't higher than the one before it (replay only, decode sees one record) |
 
 - Fsync Failure
     - when fsync fails 
@@ -114,7 +123,7 @@ We are safe to delete a segment after it has been written to the manifest and fs
 
 <!-- The functions this module exposes (names and signatures, no bodies). -->
 - Record
-    - `Record { key: Vec<u8>, op: Op }`
+    - `Record { seq: u64, key: Vec<u8>, op: Op }`
     - `Op::Put { value: Vec<u8> }` / `Op::Delete`
 - Codec
     - `encode(record: &Record) -> Result<Vec<u8>, WalError>`
@@ -139,9 +148,9 @@ We are safe to delete a segment after it has been written to the manifest and fs
 ## Tests
 
 <!-- What will prove this works? Include crash/truncation tests. -->
-- Codec (`src/wal/codec/tests.rs`): 18 tests, done
-    - Encode: Put and Tombstone layouts byte for byte, key and value at and over the limit
-    - Decode: Put/Delete round trip with bytes_used, limits round trip, every truncation point returns `Ok(None)`, each CorruptionReason, bit flips, back-to-back records, corrupt length in range
+- Codec (`src/wal/codec/tests.rs`): 20 tests, done
+    - Encode: Put and Tombstone layouts byte for byte, seq right after the CRC (little endian), key and value at and over the limit
+    - Decode: Put/Delete round trip with bytes_used, seq u64::MAX survives, limits round trip, every truncation point returns `Ok(None)`, each CorruptionReason, bit flips, back-to-back records, corrupt length in range
 
 - Writer (`src/wal/writer/tests.rs`): 6 tests, done
     - File holds exactly the encoded record
@@ -151,7 +160,7 @@ We are safe to delete a segment after it has been written to the manifest and fs
     - Failed writer refuses appends
     - Open in a missing directory returns `Io`
 
-- Replay (`src/wal/replay/tests.rs`): 6 tests, done
+- Replay (`src/wal/replay/tests.rs`): 8 tests, done
     1. Missing file returns empty and doesn't create the file
     2. Empty WAL replay
     3. Write records, replay returns them in order
@@ -159,6 +168,8 @@ We are safe to delete a segment after it has been written to the manifest and fs
         - write 3 records, cut the file at every possible byte offset, replay each one and check that you get back exactly the records before the cut and the file is truncated to the last complete record
     5. After a torn tail, append a new record and replay returns old records + the new one
     6. Bit flip in middle of log returns corruption error with the right offset, file left untouched
+    7. A seq lower than the one before it returns `SeqOutOfOrder` with that record's offset
+    8. A repeated seq is `SeqOutOfOrder` too
 
 - Integration Test
     1. Test put(key, value)
@@ -179,6 +190,8 @@ We are safe to delete a segment after it has been written to the manifest and fs
 - Record is a struct with the key plus an `Op` enum, so `record.key` is always available and Put/Delete are named variants
 - Corruption errors require a offset. This is handled by the replay instead of decode, since decode only sees a buffer. decode returns `CorruptionReason`, replay adds the offset
 - Replay reads the whole file into memory for v1. The WAL is at most one memtable's worth
+- Sequence numbers added now (Nov 13), not with compaction. Failed flushes are retried at the back of the queue, so flush order alone can't say which data is newer
+- seq goes right after the CRC so the fixed-width fields stay together at the front of the header
 
 ## See also
 

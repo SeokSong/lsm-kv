@@ -12,12 +12,14 @@
 
 <!-- Numbered, in order: manifest, stray files, WAL replay, ... -->
 1. Read the manifest (later)
-2. Delete any SSTable file the manifest doesn't list (later)
+2. Delete any SSTable file the manifest doesn't list, plus `.tmp` files and WAL segments the manifest dropped (later, crash table in [FLUSH.md](FLUSH.md))
 3. Replay the WAL into an empty memtable (`replay(path)`, done)
     - Missing WAL: nothing to replay
     - Decode records one at a time
     - Torn tail: stop, truncate the file at the end of the last valid record
     - Corruption in the middle: stop and return a corruption error with the file offset, file left untouched
+    - Seqs must strictly increase, a lower or repeated one is `SeqOutOfOrder` corruption
+    - Next seq = last replayed seq + 1 (later: the higher of that and the manifest's last seq)
 4. Open the WAL for new writes (`WalWriter::open(path)`), only after replay so new records don't land after a torn tail
 - Steps 3 and 4 are `Store::open`, done and tested (reopen after puts / deletes, after a torn tail, with a corrupt WAL)
 
@@ -30,12 +32,13 @@
 | Bit flip in the middle of the WAL | All bytes there, CRC fails | Stop with `Corruption` (v1) | Records after it are not replayed |
 | Corrupted length under the limit at the end | Looks like a torn tail | Treated as a torn tail (known limitation) | The last record |
 | fsync or write fails while running | Unknown | Writer marks itself failed, every later append returns `Failed` | Nothing acked is lost, new writes are refused |
+| Valid record with a seq that went backwards | All bytes there, CRC passes | Stop with `Corruption { reason: SeqOutOfOrder }` | Records after it are not replayed |
 | New WAL file created then crash | File's directory entry may be missing | Parent directory is fsynced on create, so the file survives | None |
 
 ## Why replay is safe
 
 <!-- Idempotency: why is replaying an already-flushed record harmless? -->
-- Puts and deletes are idempotent: replaying a record that was already flushed writes the same value again
+- Puts and deletes are idempotent: replaying a record that was already flushed writes the same value again, with the same seq
 - decode checks the CRC before trusting the type byte, so a corrupted record is never applied
 
 ## Tests

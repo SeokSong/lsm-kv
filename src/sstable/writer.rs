@@ -19,6 +19,10 @@ pub struct SstInfo {
     pub file_size: u64,
     pub first_key: Vec<u8>,
     pub last_key: Vec<u8>,
+    // oldest and newest write in the file. keys are sorted, seqs aren't, so these are
+    // tracked separately. the manifest keeps them so reads can order SSTables by seq
+    pub min_seq: u64,
+    pub max_seq: u64,
 }
 
 // writes one SSTable from entries in increasing key order (memtable.iter() order).
@@ -36,6 +40,8 @@ pub struct SstWriter {
     key_hashes: Vec<u64>,
     first_key: Option<Vec<u8>>,
     last_key: Option<Vec<u8>>,
+    min_seq: u64,
+    max_seq: u64,
     entry_count: usize,
 }
 
@@ -59,11 +65,13 @@ impl SstWriter {
             key_hashes: Vec::new(),
             first_key: None,
             last_key: None,
+            min_seq: u64::MAX,
+            max_seq: 0,
             entry_count: 0,
         })
     }
 
-    pub fn add(&mut self, key: &[u8], op: &Op) -> Result<(), SstError> {
+    pub fn add(&mut self, key: &[u8], seq: u64, op: &Op) -> Result<(), SstError> {
         if key.len() > u8::MAX as usize {
             return Err(SstError::KeyTooLong { len: key.len() });
         }
@@ -73,7 +81,9 @@ impl SstWriter {
             return Err(SstError::OutOfOrder);
         }
 
-        self.block.add(key, op);
+        self.block.add(key, seq, op);
+        self.min_seq = self.min_seq.min(seq);
+        self.max_seq = self.max_seq.max(seq);
         self.key_hashes.push(stable_hash(key));
         if self.first_key.is_none() {
             self.first_key = Some(key.to_vec());
@@ -138,6 +148,8 @@ impl SstWriter {
             file_size: self.offset,
             first_key: self.first_key.unwrap_or_default(),
             last_key: self.last_key.unwrap_or_default(),
+            min_seq: self.min_seq,
+            max_seq: self.max_seq,
         })
     }
 

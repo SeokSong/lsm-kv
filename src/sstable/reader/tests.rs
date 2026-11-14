@@ -2,6 +2,7 @@ use super::*;
 use crate::config::SstableConfig;
 use crate::memtable::Memtable;
 use crate::sstable::{SstInfo, SstWriter};
+use crate::wal::{Op, Record};
 use std::fs;
 use tempfile::TempDir;
 
@@ -23,15 +24,17 @@ fn small_block_config() -> SstableConfig {
     }
 }
 
-// laps 1.., 3 sectors each, every 7th entry a tombstone
+// laps 1.., 3 sectors each, every 7th entry a tombstone. written newest key first,
+// so seqs run the opposite way to key order
 fn sample_memtable(count: usize, value_len: usize) -> Memtable {
     let mut memtable: Memtable = Memtable::new();
-    for i in 0..count {
+    for (seq, i) in (0..count).rev().enumerate() {
+        let seq: u64 = seq as u64 + 1;
         let key: Vec<u8> = telemetry_key((i / 3) as u16 + 1, (i % 3) as u8 + 1, 1);
         if i % 7 == 6 {
-            memtable.delete(key);
+            memtable.delete(seq, key);
         } else {
-            memtable.put(key, vec![(i % 251) as u8; value_len]);
+            memtable.put(seq, key, vec![(i % 251) as u8; value_len]);
         }
     }
     memtable
@@ -39,8 +42,8 @@ fn sample_memtable(count: usize, value_len: usize) -> Memtable {
 
 fn write_memtable(path: &Path, memtable: &Memtable, config: &SstableConfig) -> SstInfo {
     let mut writer: SstWriter = SstWriter::create(path, config).unwrap();
-    for (key, op) in memtable.iter() {
-        writer.add(key, op).unwrap();
+    for (key, seq, op) in memtable.iter() {
+        writer.add(key, seq, op).unwrap();
     }
     writer.finish().unwrap()
 }
@@ -58,7 +61,7 @@ fn write_then_get_every_key() {
     assert_eq!(info.file_size, fs::metadata(&path).unwrap().len());
     assert!(reader.block_count() > 10);
 
-    for (key, op) in memtable.iter() {
+    for (key, _, op) in memtable.iter() {
         let expected: SstLookup = match op {
             Op::Put { value } => SstLookup::Found(value.clone()),
             Op::Delete => SstLookup::Deleted,
@@ -97,10 +100,14 @@ fn iter_returns_everything_in_order() {
     write_memtable(&path, &memtable, &small_block_config());
     let reader: SstReader = SstReader::open(&path).unwrap();
 
-    let from_file: Vec<(Vec<u8>, Op)> = reader.iter().map(|entry| entry.unwrap()).collect();
-    let from_memtable: Vec<(Vec<u8>, Op)> = memtable
+    let from_file: Vec<Record> = reader.iter().map(|entry| entry.unwrap()).collect();
+    let from_memtable: Vec<Record> = memtable
         .iter()
-        .map(|(key, op)| (key.to_vec(), op.clone()))
+        .map(|(key, seq, op)| Record {
+            seq,
+            key: key.to_vec(),
+            op: op.clone(),
+        })
         .collect();
 
     assert_eq!(from_file, from_memtable);
@@ -117,6 +124,10 @@ fn info_has_first_and_last_key() {
     assert_eq!(info.first_key, memtable.iter().next().unwrap().0);
     assert_eq!(info.last_key, memtable.iter().last().unwrap().0);
     assert_eq!(info.path, path);
+    // written newest key first: the first key has the highest seq
+    assert_eq!(info.min_seq, 1);
+    assert_eq!(info.max_seq, 30);
+    assert_eq!(info.max_seq, memtable.max_seq().unwrap());
 }
 
 #[test]
@@ -124,10 +135,10 @@ fn value_bigger_than_a_block_gets_its_own_block() {
     let dir: TempDir = TempDir::new().unwrap();
     let path: PathBuf = dir.path().join("000001.sst");
     let mut memtable: Memtable = Memtable::new();
-    memtable.put(telemetry_key(1, 1, 1), vec![1; 50]);
+    memtable.put(1, telemetry_key(1, 1, 1), vec![1; 50]);
     // 64 KiB value with a 1 KiB block target: soft target, never split
-    memtable.put(telemetry_key(1, 2, 1), vec![2; 65_536]);
-    memtable.put(telemetry_key(1, 3, 1), vec![3; 50]);
+    memtable.put(2, telemetry_key(1, 2, 1), vec![2; 65_536]);
+    memtable.put(3, telemetry_key(1, 3, 1), vec![3; 50]);
 
     write_memtable(&path, &memtable, &small_block_config());
     let reader: SstReader = SstReader::open(&path).unwrap();
@@ -156,7 +167,7 @@ fn works_without_a_bloom_filter() {
     let reader: SstReader = SstReader::open(&path).unwrap();
 
     assert!(reader.bloom.is_none());
-    for (key, op) in memtable.iter() {
+    for (key, _, op) in memtable.iter() {
         assert_ne!(reader.get(key).unwrap(), SstLookup::NotFound, "{op:?}");
     }
     assert_eq!(
@@ -197,15 +208,15 @@ fn out_of_order_key_is_rejected() {
     let mut writer: SstWriter = SstWriter::create(&path, &small_block_config()).unwrap();
     let put: Op = Op::Put { value: vec![1; 10] };
 
-    writer.add(&telemetry_key(2, 1, 1), &put).unwrap();
+    writer.add(&telemetry_key(2, 1, 1), 1, &put).unwrap();
 
     assert!(matches!(
-        writer.add(&telemetry_key(1, 1, 1), &put),
+        writer.add(&telemetry_key(1, 1, 1), 2, &put),
         Err(SstError::OutOfOrder)
     ));
     // a duplicate key is out of order too
     assert!(matches!(
-        writer.add(&telemetry_key(2, 1, 1), &put),
+        writer.add(&telemetry_key(2, 1, 1), 3, &put),
         Err(SstError::OutOfOrder)
     ));
 }
@@ -226,7 +237,7 @@ fn file_only_appears_after_finish() {
     let path: PathBuf = dir.path().join("000001.sst");
     let mut writer: SstWriter = SstWriter::create(&path, &small_block_config()).unwrap();
     writer
-        .add(&telemetry_key(1, 1, 1), &Op::Put { value: vec![1; 10] })
+        .add(&telemetry_key(1, 1, 1), 1, &Op::Put { value: vec![1; 10] })
         .unwrap();
 
     // while writing, only the .tmp file exists
@@ -267,7 +278,7 @@ fn corrupt_block_reports_its_offset() {
     ));
 
     // iter stops at the bad block instead of skipping it
-    let entries: Vec<Result<(Vec<u8>, Op), SstError>> = reader.iter().collect();
+    let entries: Vec<Result<Record, SstError>> = reader.iter().collect();
     assert!(entries.last().unwrap().is_err());
 }
 

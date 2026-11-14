@@ -38,12 +38,13 @@
     - Lookup: binary search the restart points, then scan at most 16 entries
 
 ```
-entry:   | type 1B | shared 1B | unshared 1B | valueLen 4B | key suffix | value |
+entry:   | type 1B | shared 1B | unshared 1B | valueLen 4B | seq 8B | key suffix | value |
 block:   | entry | entry | ... | restart offsets 4B each | restart count 4B | CRC32 4B |
 ```
 
 - type: 01 = Put, 02 = Delete (same as the WAL). A tombstone has valueLen 0
-- Measured on a full 32 MiB SSTable of 2 KB telemetry values: prefix compression saved 0.56% (189 KB). Small, since keys are 12 bytes next to 2 KB values, as expected
+- seq: the write's sequence number from the WAL. Entries are sorted by key, so seqs inside a file aren't in order. Compaction uses them to keep the newest version
+- Measured on a full 32 MiB SSTable of 2 KB telemetry values (before seq was added): prefix compression saved 0.56% (189 KB). Small, since keys are 12 bytes next to 2 KB values, as expected
 
 ## Index
 
@@ -119,23 +120,23 @@ block:   | entry | entry | ... | restart offsets 4B each | restart count 4B | CR
 <!-- Writer and reader functions (names and signatures, no bodies). -->
 - Writer
     - `SstWriter::create(path: &Path, config: &SstableConfig) -> Result<SstWriter, SstError>`
-    - `add(&mut self, key: &[u8], op: &Op) -> Result<(), SstError>`: keys in increasing order (memtable.iter() order)
+    - `add(&mut self, key: &[u8], seq: u64, op: &Op) -> Result<(), SstError>`: keys in increasing order (memtable.iter() order)
     - `finish(self) -> Result<SstInfo, SstError>`: writes bloom, index, footer, fsyncs, renames into place
-    - `SstInfo { path, entry_count, file_size, first_key, last_key }`
+    - `SstInfo { path, entry_count, file_size, first_key, last_key, min_seq, max_seq }`: the manifest will store the seq range so reads can order SSTables by seq
 - Reader
     - `SstReader::open(path: &Path) -> Result<SstReader, SstError>`
     - `get(&self, key: &[u8]) -> Result<SstLookup, SstError>`: `Found(Vec<u8>)` / `Deleted` / `NotFound`
-    - `iter(&self) -> SstIter`: every entry in key order, tombstones included. Stops at the first bad block instead of skipping it
+    - `iter(&self) -> SstIter`: every entry as a `Record` (seq, key, op) in key order, tombstones included. Stops at the first bad block instead of skipping it
     - `block_count(&self)`, `path(&self)`
 - Reads take `&self` (`read_exact_at` doesn't move a file position), so one open SSTable can be shared with the flush thread later without a lock
 - `read_exact_at` is Unix only (Linux and macOS)
 
 ## Tests
 
-- Block (`src/sstable/block/tests.rs`): round trip, prefix compression shrinks the block, get every key for restart intervals 1 / 2 / 3 / 16 / 100, missing keys, bit flips fail the CRC, every truncation is an error not a panic, bad entry with a valid CRC, builder resets between blocks
+- Block (`src/sstable/block/tests.rs`): round trip, seqs survive (0 and u64::MAX), prefix compression shrinks the block, get every key for restart intervals 1 / 2 / 3 / 16 / 100, missing keys, bit flips fail the CRC, every truncation is an error not a panic, bad entry with a valid CRC, builder resets between blocks
 - Bloom (`src/sstable/bloom/tests.rs`): pinned hash values, no false negatives, false positive rate at 6 and 10 bits/key, k per bits/key, encode/decode, CRC, every truncation
 - Index + footer (`src/sstable/index/tests.rs`): round trip, find block by last key, CRC, every truncation, footer is 22 bytes, bad magic / version, sections must fit before the footer
-- SSTable (`src/sstable/reader/tests.rs`): write a memtable then get every key (values and tombstones), missing keys, iter matches the memtable, first / last key, 64 KiB value bigger than a block, no bloom filter, bloom skips most missing keys, out of order and duplicate keys rejected, empty SSTable leaves no files, file only appears after finish, corrupt block reports its offset, bad magic, every truncation of a whole file fails open, random bytes fail open
+- SSTable (`src/sstable/reader/tests.rs`): write a memtable then get every key (values and tombstones), missing keys, iter matches the memtable (seqs included), first / last key and min / max seq, 64 KiB value bigger than a block, no bloom filter, bloom skips most missing keys, out of order and duplicate keys rejected, empty SSTable leaves no files, file only appears after finish, corrupt block reports its offset, bad magic, every truncation of a whole file fails open, random bytes fail open
 
 ## Open questions
 

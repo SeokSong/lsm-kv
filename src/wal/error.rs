@@ -10,6 +10,9 @@ pub enum CorruptionReason {
     UnknownType,
     TombstoneValue,
     LengthLimit(SizeField),
+    // a valid record whose seq isn't higher than the one before it. seqs only go up,
+    // so this is a bug or a mixed-up file, not a torn write
+    SeqOutOfOrder,
 }
 
 #[derive(Debug)]

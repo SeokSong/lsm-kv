@@ -28,7 +28,7 @@ fn bench_memtable_get(c: &mut Criterion) {
     let mut keys: Vec<Vec<u8>> = Vec::with_capacity(ENTRIES);
     for i in 0..ENTRIES {
         let key: Vec<u8> = telemetry_key((i / 3) as u16, (i % 3) as u8 + 1, 1);
-        memtable.put(key.clone(), vec![(i % 251) as u8; VALUE_LEN]);
+        memtable.put(i as u64 + 1, key.clone(), vec![(i % 251) as u8; VALUE_LEN]);
         keys.push(key);
     }
 
