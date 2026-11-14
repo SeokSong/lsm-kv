@@ -63,14 +63,14 @@ The user can request the live feed but for now that is out of scope
 | Memtable | Sorted in-memory map of recent writes (values and tombstones) | In progress: BTreeMap memtable with seqs done (14 tests). Background flush + frozen queue next | [MEMTABLE.md](MEMTABLE.md) |
 | SSTable | Immutable sorted file on disk: data blocks, index, bloom filter, footer | Done: writer + reader, prefix compression, block CRCs, tmp + rename (37 tests). Not wired into the store yet | [SSTABLE.md](SSTABLE.md) |
 | Bloom filter | Per-SSTable bit array that says "definitely not here" to skip disk reads | Done: 6 bits/key, stable hash, own CRC | [BLOOM_FILTER.md](BLOOM_FILTER.md) |
-| Flush | Writes a full memtable to a new SSTable | PR 3a done: four steps, crash tested at each one, runs inline. Background thread + retries in 3b | [FLUSH.md](FLUSH.md) |
+| Flush | Writes a full memtable to a new SSTable | Done: four steps on a background thread, retries with growing wait, backpressure, crash tested at each step | [FLUSH.md](FLUSH.md) |
 | Compaction | Merges SSTables, keeps the newest version of each key | Not started | [COMPACTION.md](COMPACTION.md) |
 | Manifest | List of live SSTables and the current WAL, the source of truth on startup | Done: whole-file rewrite with CRC, tmp + rename, file naming, obsolete files (29 tests). Used by the Store | [MANIFEST.md](MANIFEST.md) |
-| Concurrency | Lock design for the background flush: three locks, lock order, 10 rules to avoid deadlock | Designed, built in PR 3b | [CONCURRENCY.md](CONCURRENCY.md) |
+| Concurrency | Lock design for the background flush: three locks, lock order, 10 rules to avoid deadlock | Done: built and tested, deadlock test checked to fail when a rule is broken | [CONCURRENCY.md](CONCURRENCY.md) |
 | Crash recovery | Rebuilds state on startup from the manifest + WAL replay | Done for 3a: manifest, cleanup, SSTables, segment replay, tested at every flush step. kill -9 tests in week 5 | [RECOVERY.md](RECOVERY.md) |
 | Benchmarks | Microbenchmarks now, F1 replay and YCSB-style workloads later | In progress: CRC-32, write + fsync, memtable get, full-size SSTable measured on Mac | [BENCHMARKS.md](BENCHMARKS.md) |
 | Config | Tuning settings in TOML (`config/*.toml`), format constants stay in code | Done for memtable + SSTable settings (11 tests) | [CONFIG.md](CONFIG.md) |
-| Store | Public API: open (replay), put / delete (WAL then memtable), get | PR 3a done: WAL segments, manifest, flush, get across memtables + SSTables, StoreError enum (29 tests). Shareable across threads in 3b | [STORE.md](STORE.md) |
+| Store | Public API: open (replay), put / delete (WAL then memtable), get | Done for v1 writes + reads: WAL segments, manifest, background flush, get across memtables + SSTables, shareable across threads, close (39 tests). Scan in week 5 | [STORE.md](STORE.md) |
 
 <!-- Status ideas: Not started / Designing / In progress / Done / Tested / Benchmarked -->
 
@@ -88,10 +88,12 @@ The user can request the live feed but for now that is out of scope
     - Sequence numbers: every write gets a u64 seq, stored in the WAL, the memtable, and every SSTable entry
     - Manifest: live WAL segments + SSTables (seq and key ranges), next file number, last seq, CRC, atomic save, finds obsolete files
     - Store on disk (PR 3a): WAL segments, flush to SSTables, get across every layer, crash recovery at each flush step, StoreError enum
-    - 154 unit tests, CI on Linux and macOS
+    - Background flush + Store shareable across threads (PR 3b): three locks, backpressure, retries, close, concurrency tests under timeouts
+    - 165 unit tests, CI on Linux and macOS
     - Benchmarks on Mac: crc32fast is 3-4x faster than crc32c, fsync is ~99.9% of a put (~3 ms, ~350 appends/s), memtable get allocation costs nothing measurable (copy ~0.2 us per 2 KB), a full 32 MiB SSTable flush takes ~40 ms, bloom makes missing-key gets ~9x faster
 - Next
-    - PR 3b: background flush thread, bounded frozen queue + backpressure, flush retries, Store shareable across threads, close (week 3), rules in [CONCURRENCY.md](CONCURRENCY.md)
+    - Week 4: compaction (size-tiered), atomic swap through the manifest, dropping tombstones
+    - Benchmarks to turn into criterion benches: fsync, full SSTable, `Mutex` vs `RwLock` for reads
     - Read path across memtables + SSTables, StoreError becomes its own enum (WAL + SSTable errors)
 
 ## Milestones
@@ -103,7 +105,7 @@ Revised 2026-11-13: background flush pulls WAL segments and the manifest into we
 | 0 | Nov 3-9 | Rust basics, repo, CI, design doc | Done |
 | 1 | Nov 10-16 | WAL + replay, memtable, store (open / put / delete / get) | Done |
 | 2 | Nov 17-23 | SSTable writer + reader: data blocks, index, footer, block CRC, point lookup, bloom filters | Done (Nov 13) |
-| 3 | Nov 24-30 | Sequence numbers, minimal manifest, background flush, frozen memtable queue, WAL segments, read path across memtables + SSTables, Store shareable across threads | Seqs, manifest, 3a done (Nov 13) |
+| 3 | Nov 24-30 | Sequence numbers, minimal manifest, background flush, frozen memtable queue, WAL segments, read path across memtables + SSTables, Store shareable across threads | Done (Nov 13) |
 | 4 | Dec 1-7 | Compaction (size-tiered), atomic swap through the manifest, dropping tombstones | |
 | 5 | Dec 8-14 | Scan (merge iterator), crash tests (kill -9), property tests, recovery cleanup | |
 | 6 | Dec 15-21 | Ingest (FastF1 -> Parquet -> keys / values), benchmarks on Linux, group commit, RocksDB / sled comparison, README | |

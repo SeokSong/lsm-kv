@@ -1,6 +1,6 @@
 # Flush
 
-**Status:** Designed (Nov 13). Sequence numbers and the manifest are done. PR 3a is done: WAL segments, manifest in the Store, the four flush steps, crash tests at every step, flush runs inline inside put. PR 3b (flush thread, retries, Store shareable across threads) is next.
+**Status:** Designed (Nov 13). Sequence numbers and the manifest are done. PR 3a and 3b are done: WAL segments, manifest in the Store, the four flush steps on a background thread, retries, backpressure, the Store shareable across threads, close. Crash tested at every step, deadlock rules tested in [CONCURRENCY.md](CONCURRENCY.md).
 
 ## Purpose
 
@@ -63,16 +63,20 @@ The flush thread takes the oldest frozen memtable and:
 
 ## Flush failure and retries
 
-- A failed attempt (disk full, I/O error)
-    - Clean up: delete the `.tmp` and any orphan SSTable from that attempt
-    - The memtable goes to the back of the frozen queue, so one bad flush doesn't block the ones behind it
-    - Short wait before the next attempt so it doesn't spin
+- A failed SSTable write (disk full, I/O error)
+    - Clean up: delete the `.tmp` and the SSTable from that attempt, nothing lists them yet
+    - The memtable waits `flush.retry_backoff_ms` before its next try, doubling each time: 100, 200, 400 ms by default
+    - Meanwhile the flush thread takes newer memtables, so one bad flush doesn't block the ones behind it (same effect as moving it to the back of the queue, but the queue stays in age order)
+- A failed manifest save is never retried: the store is marked failed right away
+    - It's unknown whether the new manifest reached the disk (the rename may have worked, then the directory fsync failed)
+    - Deleting the SSTable to retry could delete a file the on-disk manifest lists. Keeping it is safe either way: listed means live, unlisted means the next open deletes it
 - After `flush.max_attempts` failures (default 3): mark the store failed, same as a failed fsync
     - Every later put / delete returns an error
     - Gets keep working, the data is still in memory and in the WAL
     - Restart replays the WAL, nothing acked is lost
 - Retries can finish out of order (memtable A fails, newer B flushes first). Safe because reads order by seq, which is why seqs were added before this
-- With `max_frozen = 1` the back of the queue is the same memtable, so it's a plain retry
+- With `max_frozen = 1` there's nothing newer to flush meanwhile, so it's a plain retry (and puts wait for it)
+- A put waiting for queue space wakes up when the store fails and returns `Failed`
 
 ## Threads and locks
 
@@ -130,9 +134,9 @@ The flush thread takes the oldest frozen memtable and:
 - `delete(&self, key: Vec<u8>) -> Result<(), StoreError>`
 - `get(&self, key: &[u8]) -> Result<Option<Vec<u8>>, StoreError>`
 - `close(&self) -> Result<(), StoreError>`
-- Stall count and time exposed for benchmarks
-- New config: `flush.max_attempts` (default 3)
-- `StoreError` becomes its own enum: WAL, SSTable, manifest, `Failed`
+- `stats(&self) -> StoreStats { stalls, stall_time, flushes, failed_flush_attempts }`, atomics, no lock
+- Config: `flush.max_attempts` (default 3), `flush.retry_backoff_ms` (default 100)
+- `StoreError`: `Wal`, `Sst`, `Manifest`, `Io`, `MissingManifest`, `SstSizeMismatch`, `Failed`, `Closed`
 
 ## Tests
 
@@ -141,13 +145,13 @@ The flush thread takes the oldest frozen memtable and:
 - Put blocks while the queue is full, continues once the flush finishes, stall gets counted
 - Get finds keys in active, frozen, and SSTables, tombstones in a newer layer hide older values
 - Crash at each flush step (run the steps by hand, stop between them), reopen loses nothing and cleans up orphans
-- Failed flush retries at the back of the queue, out-of-order flushes still read the newest value, store marked failed after max attempts, gets still work
+- Failed flush is retried and cleans up, out-of-order flushes still read the newest value, store marked failed after max attempts, gets still work
 - Several threads putting and getting at once, every key checked at the end
 - close finishes queued flushes, reopen after close replays only the active segment
 
 ## Open questions
 
-- Retry wait: fixed or growing (100 ms, 200 ms, 400 ms)?
+- Retry wait: growing, 100 / 200 / 400 ms (decided). Tune once there are real disk-full numbers
 - Group commit (week 6): who does the fsync for the waiting writers
 - `RwLock` vs `Mutex` for State: benchmark above
 

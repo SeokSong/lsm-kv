@@ -16,6 +16,8 @@ fn default_values() {
     assert_eq!(config.sstable.block_size_bytes, 16 * 1024);
     assert_eq!(config.sstable.restart_interval, 16);
     assert_eq!(config.sstable.bloom_bits_per_key, 6);
+    assert_eq!(config.flush.max_attempts, 3);
+    assert_eq!(config.flush.retry_backoff_ms, 100);
 }
 
 #[test]
@@ -118,4 +120,17 @@ fn zero_bloom_bits_turns_filter_off() {
     let config: Config = Config::from_toml_str("[sstable]\nbloom_bits_per_key = 0\n").unwrap();
 
     assert_eq!(config.sstable.bloom_bits_per_key, 0);
+}
+
+#[test]
+fn zero_flush_attempts_is_rejected() {
+    let result = Config::from_toml_str("[flush]\nmax_attempts = 0\n");
+
+    assert!(matches!(
+        result,
+        Err(ConfigError::Invalid {
+            field: "flush.max_attempts",
+            ..
+        })
+    ));
 }
