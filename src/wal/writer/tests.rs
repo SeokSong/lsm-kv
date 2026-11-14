@@ -9,6 +9,7 @@ fn put_record() -> Record {
     ];
 
     Record {
+        seq: 1,
         key: record_key,
         op: Op::Put {
             value: vec![0xAB; 2000],
@@ -22,6 +23,7 @@ fn delete_record() -> Record {
     ];
 
     Record {
+        seq: 2,
         key: record_key,
         op: Op::Delete,
     }
@@ -94,6 +96,7 @@ fn append_too_big_key_writes_nothing() {
     let mut writer: WalWriter = WalWriter::open(&path).unwrap();
 
     let bad_record = Record {
+        seq: 1,
         key: vec![0u8; 17],
         op: Op::Delete,
     };

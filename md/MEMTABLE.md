@@ -1,6 +1,6 @@
 # Memtable
 
-**Status:** Data structure done and tested (12 tests), settings in config. Background flush and the frozen memtable queue come next.
+**Status:** Data structure done and tested (14 tests), entries keep their sequence number, settings in config. Background flush and the frozen memtable queue come next.
 
 ## Purpose
 
@@ -23,7 +23,7 @@
 - V1: `BTreeMap<Vec<u8>, Op>` from std, hidden behind the `Memtable` API so it can be swapped later
 - Needs sorted order (flush writes the SSTable in key order) and range scans (`scan(start, end)`), so no HashMap
 - Background flush doesn't need a concurrent structure: the active memtable has one writer, the frozen one is read-only and can be shared with `Arc`
-- A concurrent structure is only needed with multiple writer threads
+- A concurrent structure is only needed with multiple writers running at the same time. The Store becomes shareable across threads in week 3, but writes still go one at a time through the WAL lock, so BTreeMap stays
 
 | Option | Concurrent writers? | Effort | When |
 |---|---|---|---|
@@ -82,21 +82,23 @@
 
 <!-- The functions this module exposes (names and signatures, no bodies). -->
 - `Memtable::new() -> Memtable`
-- `put(&mut self, key: Vec<u8>, value: Vec<u8>)`
-- `delete(&mut self, key: Vec<u8>)`: writes a tombstone
+- `put(&mut self, seq: u64, key: Vec<u8>, value: Vec<u8>)`
+- `delete(&mut self, seq: u64, key: Vec<u8>)`: writes a tombstone
+- The store hands out seqs, the memtable just keeps them. Each key stores `(seq, Op)` of its newest write (a debug assert checks a new seq is higher than the last one)
 - `apply(&mut self, record: Record)`: takes ownership, used by replay
 - `get(&self, key: &[u8]) -> Lookup<'_>`
-- `iter(&self) -> impl Iterator<Item = (&[u8], &Op)>`: key order, tombstones included
-- `range(&self, start: &[u8], end: &[u8]) -> impl Iterator<Item = (&[u8], &Op)>`
+- `iter(&self) -> impl Iterator<Item = (&[u8], u64, &Op)>`: key order with seq, tombstones included
+- `range(&self, start: &[u8], end: &[u8]) -> impl Iterator<Item = (&[u8], u64, &Op)>`
     - start inclusive, end exclusive, same as the lap scan design
     - start > end returns nothing instead of panicking
     - The iterator only borrows the memtable, start and end can be dropped right after the call
+- `max_seq(&self) -> Option<u64>`: newest write in this memtable, the read path orders memtables and SSTables by it
 - `approximate_size(&self) -> usize`, `len(&self) -> usize`, `is_empty(&self) -> bool`
 - The memtable doesn't know about the WAL, files, or flushing. put in the store writes the WAL first, then the memtable
 
 ## Tests
 
-- `src/memtable/tests.rs`: 12 tests, done
+- `src/memtable/tests.rs`: 14 tests, done
     - New memtable is empty
     - Put then get returns Found, missing key returns NotFound
     - Overwrite returns the newest value, still one entry
@@ -107,11 +109,13 @@
     - range: lap 12 scan with start inclusive and end exclusive, start > end is empty
     - Size counter on put, overwrite, delete, and a second key
     - Applying replayed records gives the same state as direct writes
+    - max_seq is the newest write, not the biggest key
+    - Overwrite keeps the newest seq
 
 ## Open questions
 
 - Skip list experiment: hand-written single-writer skip list vs BTreeMap, benchmark put and get
-- Sequence numbers aren't needed in v1 (one writer, the order comes from where a version lives). Revisit for snapshots or concurrent writers
+- Sequence numbers: added Nov 13. Retried flushes can land out of order, so where a version lives no longer says how new it is. Also needed for compaction and snapshots later
 
 ## See also
 

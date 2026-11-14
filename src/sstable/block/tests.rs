@@ -1,4 +1,5 @@
 use super::*;
+use crate::wal::Record;
 
 // 12-byte telemetry key from the design: namespace | session | car | lap | sector | seq
 fn telemetry_key(lap: u16, sector: u8, seq: u16) -> Vec<u8> {
@@ -9,8 +10,9 @@ fn telemetry_key(lap: u16, sector: u8, seq: u16) -> Vec<u8> {
     key
 }
 
-// lap 1 sector 1, lap 1 sector 2, ... in key order, every 5th one a tombstone
-fn sample_entries(count: usize) -> Vec<(Vec<u8>, Op)> {
+// lap 1 sector 1, lap 1 sector 2, ... in key order, every 5th one a tombstone.
+// seqs go down while keys go up: an SSTable is sorted by key, never by seq
+fn sample_entries(count: usize) -> Vec<Record> {
     (0..count)
         .map(|i| {
             let key: Vec<u8> = telemetry_key((i / 3) as u16 + 1, (i % 3) as u8 + 1, 1);
@@ -21,22 +23,26 @@ fn sample_entries(count: usize) -> Vec<(Vec<u8>, Op)> {
                     value: vec![i as u8; 30],
                 }
             };
-            (key, op)
+            Record {
+                seq: 1_000 - i as u64,
+                key,
+                op,
+            }
         })
         .collect()
 }
 
-fn build_block(entries: &[(Vec<u8>, Op)], restart_interval: usize) -> Vec<u8> {
+fn build_block(entries: &[Record], restart_interval: usize) -> Vec<u8> {
     let mut builder: BlockBuilder = BlockBuilder::new(restart_interval);
-    for (key, op) in entries {
-        builder.add(key, op);
+    for record in entries {
+        builder.add(&record.key, record.seq, &record.op);
     }
     builder.finish()
 }
 
 #[test]
 fn entries_round_trip() {
-    let entries: Vec<(Vec<u8>, Op)> = sample_entries(20);
+    let entries: Vec<Record> = sample_entries(20);
     let bytes: Vec<u8> = build_block(&entries, 16);
 
     let block: Block<'_> = Block::parse(&bytes).unwrap();
@@ -46,7 +52,7 @@ fn entries_round_trip() {
 
 #[test]
 fn prefix_compression_shrinks_the_block() {
-    let entries: Vec<(Vec<u8>, Op)> = sample_entries(20);
+    let entries: Vec<Record> = sample_entries(20);
 
     // restart every entry = every key stored in full, no compression
     let uncompressed: Vec<u8> = build_block(&entries, 1);
@@ -62,19 +68,19 @@ fn prefix_compression_shrinks_the_block() {
 
 #[test]
 fn get_every_key_for_any_restart_interval() {
-    let entries: Vec<(Vec<u8>, Op)> = sample_entries(40);
+    let entries: Vec<Record> = sample_entries(40);
 
     for restart_interval in [1, 2, 3, 16, 100] {
         let bytes: Vec<u8> = build_block(&entries, restart_interval);
         let block: Block<'_> = Block::parse(&bytes).unwrap();
 
-        for (key, op) in &entries {
-            let expected: BlockLookup = match op {
+        for record in &entries {
+            let expected: BlockLookup = match &record.op {
                 Op::Put { value } => BlockLookup::Found(value.clone()),
                 Op::Delete => BlockLookup::Deleted,
             };
             assert_eq!(
-                block.get(key).unwrap(),
+                block.get(&record.key).unwrap(),
                 expected,
                 "restart interval {restart_interval}"
             );
@@ -84,7 +90,7 @@ fn get_every_key_for_any_restart_interval() {
 
 #[test]
 fn get_missing_keys() {
-    let entries: Vec<(Vec<u8>, Op)> = sample_entries(10);
+    let entries: Vec<Record> = sample_entries(10);
     let bytes: Vec<u8> = build_block(&entries, 3);
     let block: Block<'_> = Block::parse(&bytes).unwrap();
 
@@ -132,6 +138,7 @@ fn bad_entry_with_valid_crc_is_caught() {
     // a block whose CRC is fine but whose first entry claims a 1000-byte value
     let mut block: Vec<u8> = vec![TYPE_PUT, 0, 1];
     block.extend_from_slice(&1000u32.to_le_bytes());
+    block.extend_from_slice(&1u64.to_le_bytes()); // seq
     block.push(0x42);
     block.extend_from_slice(&0u32.to_le_bytes()); // restart at 0
     block.extend_from_slice(&1u32.to_le_bytes()); // 1 restart
@@ -147,18 +154,39 @@ fn bad_entry_with_valid_crc_is_caught() {
 #[test]
 fn builder_resets_after_finish() {
     let mut builder: BlockBuilder = BlockBuilder::new(16);
-    let first: Vec<(Vec<u8>, Op)> = sample_entries(5);
-    for (key, op) in &first {
-        builder.add(key, op);
+    let first: Vec<Record> = sample_entries(5);
+    for record in &first {
+        builder.add(&record.key, record.seq, &record.op);
     }
     builder.finish();
     assert!(builder.is_empty());
 
     // the next block starts fresh: its first key is a restart, stored in full
-    let second: Vec<(Vec<u8>, Op)> =
-        vec![(telemetry_key(50, 1, 1), Op::Put { value: vec![7; 10] })];
-    builder.add(&second[0].0, &second[0].1);
+    let second: Vec<Record> = vec![Record {
+        seq: 1,
+        key: telemetry_key(50, 1, 1),
+        op: Op::Put { value: vec![7; 10] },
+    }];
+    builder.add(&second[0].key, second[0].seq, &second[0].op);
     let bytes: Vec<u8> = builder.finish();
 
     assert_eq!(Block::parse(&bytes).unwrap().entries().unwrap(), second);
+}
+
+#[test]
+fn entries_keep_their_seq() {
+    let mut builder: BlockBuilder = BlockBuilder::new(16);
+    builder.add(&telemetry_key(1, 1, 1), u64::MAX, &Op::Delete);
+    builder.add(&telemetry_key(1, 2, 1), 0, &Op::Put { value: vec![1; 5] });
+    let bytes: Vec<u8> = builder.finish();
+
+    let seqs: Vec<u64> = Block::parse(&bytes)
+        .unwrap()
+        .entries()
+        .unwrap()
+        .iter()
+        .map(|record| record.seq)
+        .collect();
+
+    assert_eq!(seqs, vec![u64::MAX, 0]);
 }

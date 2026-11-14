@@ -3,9 +3,11 @@ use crate::wal::{CorruptionReason, Op, WalWriter, encode};
 use std::path::PathBuf;
 use tempfile::TempDir;
 
+// seq = id, so records written in id order have increasing seqs.
 // small records keep the every-truncation test fast, each torn cut does a real fsync
 fn small_put(id: u8) -> Record {
     Record {
+        seq: id as u64,
         key: vec![0x01, 0x00, 0x00, id],
         op: Op::Put {
             value: vec![id; 20],
@@ -15,6 +17,7 @@ fn small_put(id: u8) -> Record {
 
 fn small_delete(id: u8) -> Record {
     Record {
+        seq: id as u64,
         key: vec![0x01, 0x00, 0x00, id],
         op: Op::Delete,
     }
@@ -147,4 +150,40 @@ fn replay_corruption_reports_offset() {
 
     // corruption is not a torn tail, the file is left untouched
     assert_eq!(fs::read(&path).unwrap(), wal_bytes);
+}
+
+#[test]
+fn replay_seq_out_of_order_is_corruption() {
+    let dir: TempDir = TempDir::new().unwrap();
+    let path: PathBuf = dir.path().join("wal.log");
+    // seq 2 after seq 3: both records are valid on their own, only the order is wrong
+    write_records(&path, &[small_put(1), small_put(3), small_put(2)]);
+
+    let result = replay(&path);
+
+    let second_end: u64 = 2 * encode(&small_put(1)).unwrap().len() as u64;
+    assert!(matches!(
+        result,
+        Err(WalError::Corruption {
+            offset,
+            reason: CorruptionReason::SeqOutOfOrder,
+        }) if offset == second_end
+    ));
+}
+
+#[test]
+fn replay_duplicate_seq_is_corruption() {
+    let dir: TempDir = TempDir::new().unwrap();
+    let path: PathBuf = dir.path().join("wal.log");
+    write_records(&path, &[small_put(1), small_delete(1)]);
+
+    let result = replay(&path);
+
+    assert!(matches!(
+        result,
+        Err(WalError::Corruption {
+            reason: CorruptionReason::SeqOutOfOrder,
+            ..
+        })
+    ));
 }

@@ -4,7 +4,8 @@
 //! HTML report: target/criterion/report/index.html
 //!
 //! Buffer sizes match the WAL records this store actually writes:
-//!   - 22 B    : tombstone record (10-byte header + 12-byte key)
+//!   - 22 B    : tombstone record before seq numbers (10-byte header + 12-byte key), now 30 B
+//!     with the 8-byte seq. kept at 22 so old results stay comparable
 //!   - 2 KB    : typical sector chunk (p50 ~106 samples)
 //!   - 5 KB    : slowest measured sector (242 samples)
 //!   - 64 KB   : MAX_VALUE_LEN, the largest value the store accepts

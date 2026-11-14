@@ -7,6 +7,7 @@
 - Which CRC is faster for our record sizes, crc32fast or crc32c?
 - What limits put throughput?
 - How much does group commit help over fsync every write?
+- Shared read state: does `Mutex` hold back concurrent gets enough to need `RwLock`? (week 3, see [FLUSH.md](FLUSH.md))
 
 ## Workloads
 
@@ -25,6 +26,7 @@
 <!-- Chunk size, fsync policy, block size, bloom bits, compaction strategy, ... -->
 - CRC algorithm: crc32fast vs crc32c
 - fsync policy: every write (v1), group commit, periodic
+- State lock: `Mutex` (v1) vs `RwLock`, with 1 / 2 / 4 / 8 reader threads + 1 writer
 
 ## Metrics
 

@@ -1,4 +1,4 @@
-use crate::wal::Op;
+use crate::wal::{Op, Record};
 
 use super::error::SstCorruption;
 
@@ -6,12 +6,12 @@ use super::error::SstCorruption;
 pub(crate) const TYPE_PUT: u8 = 1;
 pub(crate) const TYPE_DELETE: u8 = 2;
 
-// type + shared + unshared + valueLen
-const ENTRY_HEADER_LEN: usize = 1 + 1 + 1 + 4;
+// type + shared + unshared + valueLen + seq
+const ENTRY_HEADER_LEN: usize = 1 + 1 + 1 + 4 + 8;
 pub(crate) const CRC_LEN: usize = 4;
 
 // block layout (little endian):
-//   entries:  | type 1B | shared 1B | unshared 1B | valueLen 4B | key suffix | value | ...
+//   entries:  | type 1B | shared 1B | unshared 1B | valueLen 4B | seq 8B | key suffix | value | ...
 //   trailer:  | restart offsets 4B each | restart count 4B | CRC32 4B |
 // shared = bytes of the key that match the previous key. at a restart point shared is 0
 // and the full key is stored, so a lookup can binary search the restart points
@@ -39,7 +39,7 @@ impl BlockBuilder {
     }
 
     // caller makes sure keys come in increasing order and fit in 1-byte lengths
-    pub(crate) fn add(&mut self, key: &[u8], op: &Op) {
+    pub(crate) fn add(&mut self, key: &[u8], seq: u64, op: &Op) {
         let starts_restart: bool =
             self.restarts.is_empty() || self.entries_since_restart >= self.restart_interval;
 
@@ -62,6 +62,7 @@ impl BlockBuilder {
         self.buffer.push(unshared.len() as u8);
         self.buffer
             .extend_from_slice(&(value.len() as u32).to_le_bytes());
+        self.buffer.extend_from_slice(&seq.to_le_bytes());
         self.buffer.extend_from_slice(unshared);
         self.buffer.extend_from_slice(value);
 
@@ -116,6 +117,7 @@ pub(crate) struct Block<'a> {
 // one decoded entry, value borrowed from the block
 struct EntryRef<'a> {
     key: Vec<u8>,
+    seq: u64,
     type_byte: u8,
     value: &'a [u8],
     next_offset: usize,
@@ -170,8 +172,8 @@ impl<'a> Block<'a> {
     }
 
     // every entry in key order, tombstones included
-    pub(crate) fn entries(&self) -> Result<Vec<(Vec<u8>, Op)>, SstCorruption> {
-        let mut decoded: Vec<(Vec<u8>, Op)> = Vec::new();
+    pub(crate) fn entries(&self) -> Result<Vec<Record>, SstCorruption> {
+        let mut decoded: Vec<Record> = Vec::new();
         let mut offset: usize = 0;
         let mut prev_key: Vec<u8> = Vec::new();
 
@@ -180,7 +182,11 @@ impl<'a> Block<'a> {
             let op: Op = to_op(entry.type_byte, entry.value)?;
             offset = entry.next_offset;
             prev_key = entry.key.clone();
-            decoded.push((entry.key, op));
+            decoded.push(Record {
+                seq: entry.seq,
+                key: entry.key,
+                op,
+            });
         }
 
         Ok(decoded)
@@ -245,7 +251,8 @@ impl<'a> Block<'a> {
         let shared: usize = entries[offset + 1] as usize;
         let unshared: usize = entries[offset + 2] as usize;
         let value_len: usize =
-            u32::from_le_bytes(entries[offset + 3..header_end].try_into().unwrap()) as usize;
+            u32::from_le_bytes(entries[offset + 3..offset + 7].try_into().unwrap()) as usize;
+        let seq: u64 = u64::from_le_bytes(entries[offset + 7..header_end].try_into().unwrap());
 
         if shared > prev_key.len() {
             return Err(SstCorruption::BadEntry);
@@ -264,6 +271,7 @@ impl<'a> Block<'a> {
 
         Ok(EntryRef {
             key,
+            seq,
             type_byte,
             value: &entries[key_end..value_end],
             next_offset: value_end,

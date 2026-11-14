@@ -11,11 +11,16 @@ pub type StoreError = WalError;
 
 const WAL_FILE_NAME: &str = "wal.log";
 
+// seq 0 is never written, so "nothing written yet" needs no special case
+const FIRST_SEQ: u64 = 1;
+
 pub struct Store {
     dir: PathBuf,
     config: Config,
     wal: WalWriter,
     memtable: Memtable,
+    // seq the next put or delete gets
+    next_seq: u64,
 }
 
 impl Store {
@@ -31,6 +36,12 @@ impl Store {
 
         // replay before opening the writer, so a torn tail is cut off before new appends
         let records: Vec<Record> = wal::replay(&wal_path)?;
+        // replay checked that seqs strictly increase, so the last record has the highest.
+        // the manifest's last seq joins this once SSTables exist (week 3)
+        let next_seq: u64 = match records.last() {
+            Some(record) => record.seq + 1,
+            None => FIRST_SEQ,
+        };
         let mut memtable: Memtable = Memtable::new();
         for record in records {
             memtable.apply(record);
@@ -43,12 +54,14 @@ impl Store {
             config,
             wal,
             memtable,
+            next_seq,
         })
     }
 
     // durable when this returns Ok
     pub fn put(&mut self, key: Vec<u8>, value: Vec<u8>) -> Result<(), StoreError> {
         let record: Record = Record {
+            seq: self.next_seq,
             key,
             op: Op::Put { value },
         };
@@ -58,6 +71,7 @@ impl Store {
     // writes a tombstone, durable when this returns Ok
     pub fn delete(&mut self, key: Vec<u8>) -> Result<(), StoreError> {
         let record: Record = Record {
+            seq: self.next_seq,
             key,
             op: Op::Delete,
         };
@@ -78,6 +92,11 @@ impl Store {
         self.memtable.approximate_size() >= self.config.memtable.flush_threshold_bytes
     }
 
+    // seq of the newest write, 0 if nothing has been written
+    pub fn last_seq(&self) -> u64 {
+        self.next_seq - 1
+    }
+
     pub fn dir(&self) -> &Path {
         &self.dir
     }
@@ -85,6 +104,8 @@ impl Store {
     fn write(&mut self, record: Record) -> Result<(), StoreError> {
         // WAL first: if the append fails (bad input, write or fsync error) the memtable is untouched
         self.wal.append(&record)?;
+        // only an acked write uses up its seq. a rejected one leaves no gap
+        self.next_seq += 1;
         self.memtable.apply(record);
         Ok(())
     }

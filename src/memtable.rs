@@ -13,12 +13,16 @@ pub enum Lookup<'a> {
 }
 
 // latest state of each recent key, sorted by key. one entry per key, a newer write
-// replaces the old one. BTreeMap for v1, the structure stays hidden behind this API
+// replaces the old one. each entry keeps the seq of the write that made it, the SSTable
+// stores it too. BTreeMap for v1, the structure stays hidden behind this API
 #[derive(Debug, Default)]
 pub struct Memtable {
-    entries: BTreeMap<Vec<u8>, Op>,
+    entries: BTreeMap<Vec<u8>, (u64, Op)>,
     // running total of key + value bytes, updated on every write so it's never re-measured
     size: usize,
+    // newest write in this memtable. reads order memtables and SSTables by this, not by
+    // when they were flushed
+    max_seq: Option<u64>,
 }
 
 impl Memtable {
@@ -26,32 +30,34 @@ impl Memtable {
         Memtable::default()
     }
 
-    pub fn put(&mut self, key: Vec<u8>, value: Vec<u8>) {
-        self.insert(key, Op::Put { value });
+    pub fn put(&mut self, seq: u64, key: Vec<u8>, value: Vec<u8>) {
+        self.insert(seq, key, Op::Put { value });
     }
 
     // a delete is a tombstone write, even if the key isn't in this memtable,
     // since an older SSTable might still have a value for it
-    pub fn delete(&mut self, key: Vec<u8>) {
-        self.insert(key, Op::Delete);
+    pub fn delete(&mut self, seq: u64, key: Vec<u8>) {
+        self.insert(seq, key, Op::Delete);
     }
 
     // takes ownership so replayed records move in without copying
     pub fn apply(&mut self, record: Record) {
-        self.insert(record.key, record.op);
+        self.insert(record.seq, record.key, record.op);
     }
 
     pub fn get(&self, key: &[u8]) -> Lookup<'_> {
         match self.entries.get(key) {
-            Some(Op::Put { value }) => Lookup::Found(value),
-            Some(Op::Delete) => Lookup::Deleted,
+            Some((_, Op::Put { value })) => Lookup::Found(value),
+            Some((_, Op::Delete)) => Lookup::Deleted,
             None => Lookup::NotFound,
         }
     }
 
     // every entry in key order, tombstones included (flush writes them to the SSTable too)
-    pub fn iter(&self) -> impl Iterator<Item = (&[u8], &Op)> {
-        self.entries.iter().map(|(key, op)| (key.as_slice(), op))
+    pub fn iter(&self) -> impl Iterator<Item = (&[u8], u64, &Op)> {
+        self.entries
+            .iter()
+            .map(|(key, (seq, op))| (key.as_slice(), *seq, op))
     }
 
     // keys in [start, end): start inclusive, end exclusive, same as the lap scan design.
@@ -60,13 +66,18 @@ impl Memtable {
         &'a self,
         start: &[u8],
         end: &[u8],
-    ) -> impl Iterator<Item = (&'a [u8], &'a Op)> + use<'a> {
+    ) -> impl Iterator<Item = (&'a [u8], u64, &'a Op)> + use<'a> {
         // BTreeMap::range panics if start > end, an empty range is the right answer instead
         let end: &[u8] = if end < start { start } else { end };
 
         self.entries
             .range::<[u8], _>((Bound::Included(start), Bound::Excluded(end)))
-            .map(|(key, op)| (key.as_slice(), op))
+            .map(|(key, (seq, op))| (key.as_slice(), *seq, op))
+    }
+
+    // highest seq written to this memtable, None while it's empty
+    pub fn max_seq(&self) -> Option<u64> {
+        self.max_seq
     }
 
     // key + value bytes, compared against the flush threshold
@@ -82,13 +93,21 @@ impl Memtable {
         self.entries.is_empty()
     }
 
-    fn insert(&mut self, key: Vec<u8>, op: Op) {
+    // the caller hands out seqs in increasing order (the store does it under its write lock)
+    fn insert(&mut self, seq: u64, key: Vec<u8>, op: Op) {
+        debug_assert!(
+            self.max_seq.is_none_or(|max_seq| seq > max_seq),
+            "seq {seq} is not newer than {:?}",
+            self.max_seq
+        );
+        self.max_seq = Some(seq);
+
         let key_len: usize = key.len();
         let new_value_len: usize = value_len(&op);
 
         // insert hands back the old entry on overwrite, so the counter is fixed up for free
-        match self.entries.insert(key, op) {
-            Some(old_op) => {
+        match self.entries.insert(key, (seq, op)) {
+            Some((_, old_op)) => {
                 self.size = self.size - value_len(&old_op) + new_value_len;
             }
             None => {

@@ -3,7 +3,7 @@ use std::os::unix::fs::FileExt;
 use std::path::{Path, PathBuf};
 use std::vec::IntoIter;
 
-use crate::wal::Op;
+use crate::wal::Record;
 
 use super::block::{Block, BlockLookup};
 use super::bloom::BloomFilter;
@@ -108,7 +108,7 @@ impl SstReader {
         }
     }
 
-    // every entry in key order, tombstones included. reads one block at a time
+    // every entry in key order with its seq, tombstones included. reads one block at a time
     pub fn iter(&self) -> SstIter<'_> {
         SstIter {
             reader: self,
@@ -126,7 +126,7 @@ impl SstReader {
         self.index.len()
     }
 
-    fn read_block_entries(&self, entry: &IndexEntry) -> Result<Vec<(Vec<u8>, Op)>, SstError> {
+    fn read_block_entries(&self, entry: &IndexEntry) -> Result<Vec<Record>, SstError> {
         let block_bytes: Vec<u8> = read_section(&self.file, entry.offset, entry.len)?;
         let block: Block<'_> =
             Block::parse(&block_bytes).map_err(|reason| corruption(entry.offset as u64, reason))?;
@@ -139,13 +139,13 @@ impl SstReader {
 pub struct SstIter<'a> {
     reader: &'a SstReader,
     next_block: usize,
-    current: IntoIter<(Vec<u8>, Op)>,
+    current: IntoIter<Record>,
     // after an error the iterator stops instead of skipping the bad block
     failed: bool,
 }
 
 impl Iterator for SstIter<'_> {
-    type Item = Result<(Vec<u8>, Op), SstError>;
+    type Item = Result<Record, SstError>;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.failed {
