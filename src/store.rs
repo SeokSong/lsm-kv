@@ -1,7 +1,8 @@
-use std::fs::{self, File};
+use std::fs;
 use std::path::{Path, PathBuf};
 
 use crate::config::Config;
+use crate::fs_util::sync_parent_dir;
 use crate::memtable::{Lookup, Memtable};
 use crate::wal::{self, Op, Record, WalError, WalWriter};
 
@@ -109,14 +110,6 @@ impl Store {
         self.memtable.apply(record);
         Ok(())
     }
-}
-
-fn sync_parent_dir(path: &Path) -> std::io::Result<()> {
-    let parent: &Path = match path.parent() {
-        Some(parent) if !parent.as_os_str().is_empty() => parent,
-        _ => Path::new("."),
-    };
-    File::open(parent)?.sync_all()
 }
 
 #[cfg(test)]

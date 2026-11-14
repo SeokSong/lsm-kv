@@ -1,6 +1,6 @@
 # Crash Recovery
 
-**Status:** In progress. WAL replay is done (torn tail truncation, corruption with offset). Manifest and SSTable cleanup come later.
+**Status:** In progress. WAL replay is done (torn tail truncation, corruption with offset). Manifest load and finding obsolete files are done, the Store uses them in the flush PR.
 
 ## Guarantee
 
@@ -11,8 +11,8 @@
 ## Startup steps
 
 <!-- Numbered, in order: manifest, stray files, WAL replay, ... -->
-1. Read the manifest (later)
-2. Delete any SSTable file the manifest doesn't list, plus `.tmp` files and WAL segments the manifest dropped (later, crash table in [FLUSH.md](FLUSH.md))
+1. Read the manifest (`Manifest::load`, done). None = new store, but only if there are no `.sst` files either
+2. Delete everything `obsolete_files` returns: unlisted SSTables and WAL segments, `.tmp` files (done, wired in the flush PR, crash table in [FLUSH.md](FLUSH.md)). Must run before any new file is created, since file numbers can be handed out again after a crash
 3. Replay the WAL into an empty memtable (`replay(path)`, done)
     - Missing WAL: nothing to replay
     - Decode records one at a time
