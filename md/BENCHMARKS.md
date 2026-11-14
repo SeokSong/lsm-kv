@@ -91,6 +91,27 @@ Question: `Store::get` returns an owned `Vec<u8>` (one ~2 KB copy per read). Is 
 - The borrow case never reads the value bytes, so it flatters zero-copy. A real caller would read those bytes too and pay most of that memory cost anyway
 - Owned values stay for now. Later, SSTable reads (disk, us to ms) will make ~0.3 us per copy even less significant
 
+### SSTable: full 32 MiB flush (2026-11-13, Mac)
+
+- One full memtable: 16,678 telemetry entries x 2,000 byte values, 20 cars, default config (16 KiB blocks, restart interval 16, 6 bloom bits/key)
+- Quick timed program outside the repo (like the fsync loop), page cache warm. Should become a criterion bench
+
+| Measurement | Result |
+|---|---|
+| SSTable size | 32.1 MiB (raw key + value bytes 32.0 MiB), 1,854 blocks |
+| Write + fsync + rename (one whole flush) | ~40 ms |
+| Prefix compression savings | 189 KB, 0.56% |
+| Bloom filter size | 12.5 KB |
+| get, key present | ~3.2 us |
+| get, key missing, with bloom filter | ~0.18 us |
+| get, key missing, no bloom filter | ~1.67 us |
+| Iterate all entries | ~6 ms |
+
+- A flush takes ~40 ms, filling a 32 MiB memtable at ~350 puts/s takes ~45 s, so the background flush thread will mostly be idle
+- Prefix compression barely helps here: keys are 12 bytes next to 2 KB values
+- The bloom filter makes missing-key lookups ~9x faster even with the file cached. With a cold cache the miss without a filter is a disk read
+- Rerun on Linux with a cold page cache before using these numbers
+
 Revisit zero-copy reads when:
 - We're doing hundreds of thousands or millions of reads per second
 - Profiling shows allocation or memory-copy overhead is significant

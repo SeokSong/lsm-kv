@@ -183,6 +183,7 @@ fn memtable_full_uses_config_threshold() {
             flush_threshold_bytes: 200,
             max_frozen: 1,
         },
+        ..Config::default()
     };
     let mut store: Store = Store::open(dir.path(), config).unwrap();
 

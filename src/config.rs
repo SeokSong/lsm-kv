@@ -9,6 +9,7 @@ use serde::Deserialize;
 #[serde(default, deny_unknown_fields)]
 pub struct Config {
     pub memtable: MemtableConfig,
+    pub sstable: SstableConfig,
 }
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]
@@ -25,6 +26,27 @@ impl Default for MemtableConfig {
         MemtableConfig {
             flush_threshold_bytes: 32 * 1024 * 1024,
             max_frozen: 1,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct SstableConfig {
+    // soft target: a block is closed once it reaches this, a bigger value gets a block to itself
+    pub block_size_bytes: usize,
+    // every Nth entry in a block stores its full key so lookups can binary search to it
+    pub restart_interval: usize,
+    // bloom filter bits per key, 0 turns the filter off
+    pub bloom_bits_per_key: usize,
+}
+
+impl Default for SstableConfig {
+    fn default() -> SstableConfig {
+        SstableConfig {
+            block_size_bytes: 16 * 1024,
+            restart_interval: 16,
+            bloom_bits_per_key: 6,
         }
     }
 }
@@ -75,6 +97,18 @@ impl Config {
         if self.memtable.max_frozen == 0 {
             return Err(ConfigError::Invalid {
                 field: "memtable.max_frozen",
+                reason: "must be at least 1",
+            });
+        }
+        if self.sstable.block_size_bytes == 0 {
+            return Err(ConfigError::Invalid {
+                field: "sstable.block_size_bytes",
+                reason: "must be greater than 0",
+            });
+        }
+        if self.sstable.restart_interval == 0 {
+            return Err(ConfigError::Invalid {
+                field: "sstable.restart_interval",
                 reason: "must be at least 1",
             });
         }

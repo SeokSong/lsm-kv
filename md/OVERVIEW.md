@@ -61,14 +61,14 @@ The user can request the live feed but for now that is out of scope
 |---|---|---|---|
 | WAL | Append-only log on disk, every put/delete is written + fsynced here first so the memtable can be rebuilt after a crash | Done for v1: encode, decode, append + fsync, replay (30 tests). Segments come with flush | [WAL.md](WAL.md) |
 | Memtable | Sorted in-memory map of recent writes (values and tombstones) | In progress: BTreeMap memtable done (12 tests). Background flush + frozen queue next | [MEMTABLE.md](MEMTABLE.md) |
-| SSTable | Immutable sorted file on disk: data blocks, index, bloom filter, footer | Designing | [SSTABLE.md](SSTABLE.md) |
-| Bloom filter | Per-SSTable bit array that says "definitely not here" to skip disk reads | Designing | [BLOOM_FILTER.md](BLOOM_FILTER.md) |
+| SSTable | Immutable sorted file on disk: data blocks, index, bloom filter, footer | Done: writer + reader, prefix compression, block CRCs, tmp + rename (37 tests). Not wired into the store yet | [SSTABLE.md](SSTABLE.md) |
+| Bloom filter | Per-SSTable bit array that says "definitely not here" to skip disk reads | Done: 6 bits/key, stable hash, own CRC | [BLOOM_FILTER.md](BLOOM_FILTER.md) |
 | Flush | Writes a full memtable to a new SSTable | Designing | [FLUSH.md](FLUSH.md) |
 | Compaction | Merges SSTables, keeps the newest version of each key | Not started | [COMPACTION.md](COMPACTION.md) |
 | Manifest | List of live SSTables and the current WAL, the source of truth on startup | Designing | [MANIFEST.md](MANIFEST.md) |
 | Crash recovery | Rebuilds state on startup from the manifest + WAL replay | Designing | [RECOVERY.md](RECOVERY.md) |
-| Benchmarks | Microbenchmarks now, F1 replay and YCSB-style workloads later | In progress: CRC-32 and write + fsync measured on Mac | [BENCHMARKS.md](BENCHMARKS.md) |
-| Config | Tuning settings in TOML (`config/*.toml`), format constants stay in code | Done for memtable settings (8 tests) | [CONFIG.md](CONFIG.md) |
+| Benchmarks | Microbenchmarks now, F1 replay and YCSB-style workloads later | In progress: CRC-32, write + fsync, memtable get, full-size SSTable measured on Mac | [BENCHMARKS.md](BENCHMARKS.md) |
+| Config | Tuning settings in TOML (`config/*.toml`), format constants stay in code | Done for memtable + SSTable settings (11 tests) | [CONFIG.md](CONFIG.md) |
 | Store | Public API: open (replay), put / delete (WAL then memtable), get | In progress: memtable-only reads done (10 tests). Flush + SSTables next | [STORE.md](STORE.md) |
 
 <!-- Status ideas: Not started / Designing / In progress / Done / Tested / Benchmarked -->
@@ -83,11 +83,12 @@ The user can request the live feed but for now that is out of scope
     - Memtable: BTreeMap of key -> Op, Lookup enum (Found / Deleted / NotFound), running size counter, sorted iter and range
     - Config: TOML tuning settings (memtable flush threshold, max frozen memtables), default + 16/64 MiB benchmark profiles
     - Store: open (replay, then WAL writer), put / delete (WAL first, then memtable), get from the memtable
-    - 60 unit tests, CI on Linux and macOS
-    - Benchmarks on Mac: crc32fast is 3-4x faster than crc32c, fsync is ~99.9% of a put (~3 ms, ~350 appends/s), memtable get allocation costs nothing measurable (copy ~0.2 us per 2 KB)
+    - SSTable: writer + reader with prefix-compressed 16 KiB blocks, last-key index, bloom filter, 22-byte footer, CRC on every section, tmp + rename
+    - 99 unit tests, CI on Linux and macOS
+    - Benchmarks on Mac: crc32fast is 3-4x faster than crc32c, fsync is ~99.9% of a put (~3 ms, ~350 appends/s), memtable get allocation costs nothing measurable (copy ~0.2 us per 2 KB), a full 32 MiB SSTable flush takes ~40 ms, bloom makes missing-key gets ~9x faster
 - Next
-    - SSTable writer + reader (week 2)
     - Background flush thread, bounded frozen memtable queue, WAL segments, minimal manifest (week 3)
+    - Read path across memtables + SSTables, StoreError becomes its own enum (WAL + SSTable errors)
 
 ## Milestones
 
@@ -97,8 +98,8 @@ Revised 2026-11-13: background flush pulls WAL segments and the manifest into we
 |---|---|---|---|
 | 0 | Nov 3-9 | Rust basics, repo, CI, design doc | Done |
 | 1 | Nov 10-16 | WAL + replay, memtable, store (open / put / delete / get) | Done |
-| 2 | Nov 17-23 | SSTable writer + reader: data blocks, index, footer, block CRC, point lookup | |
-| 3 | Nov 24-30 | Background flush, frozen memtable queue, WAL segments, minimal manifest, read path across memtables + SSTables, bloom filters | |
+| 2 | Nov 17-23 | SSTable writer + reader: data blocks, index, footer, block CRC, point lookup, bloom filters | Done (Nov 13) |
+| 3 | Nov 24-30 | Background flush, frozen memtable queue, WAL segments, minimal manifest, read path across memtables + SSTables | |
 | 4 | Dec 1-7 | Compaction (size-tiered), atomic swap through the manifest, dropping tombstones | |
 | 5 | Dec 8-14 | Scan (merge iterator), crash tests (kill -9), property tests, recovery cleanup | |
 | 6 | Dec 15-21 | Ingest (FastF1 -> Parquet -> keys / values), benchmarks on Linux, group commit, RocksDB / sled comparison, README | |
