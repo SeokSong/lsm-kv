@@ -11,7 +11,9 @@ const DELETE_BYTE_TYPE: u8 = 2;
 // crc + seq + type + keyLen + valueLen
 const HEADER_LEN: usize = 4 + 8 + 1 + 1 + 4;
 
-pub fn encode(record: &Record) -> Result<Vec<u8>, WalError> {
+// checks the key and value fit the record format, without encoding anything.
+// the store runs this before a memtable swap so a rejected put can't trigger a flush
+pub fn validate(record: &Record) -> Result<(), WalError> {
     let key_len = record.key.len();
     if key_len > MAX_KEY_LEN {
         return Err(WalError::Size {
@@ -20,19 +22,24 @@ pub fn encode(record: &Record) -> Result<Vec<u8>, WalError> {
             which_field: SizeField::Key,
         });
     }
+    if let Op::Put { ref value } = record.op
+        && value.len() > MAX_VALUE_LEN
+    {
+        return Err(WalError::Size {
+            incorrect_size: value.len(),
+            correct_max_size: MAX_VALUE_LEN,
+            which_field: SizeField::Value,
+        });
+    }
+    Ok(())
+}
+
+pub fn encode(record: &Record) -> Result<Vec<u8>, WalError> {
+    validate(record)?;
+    let key_len = record.key.len();
     //get type byte
     let (byte_type, value): (u8, &[u8]) = match record.op {
-        Op::Put { ref value } => {
-            let value_len = value.len();
-            if value_len > MAX_VALUE_LEN {
-                return Err(WalError::Size {
-                    incorrect_size: value_len,
-                    correct_max_size: MAX_VALUE_LEN,
-                    which_field: SizeField::Value,
-                });
-            };
-            (PUT_BYTE_TYPE, value)
-        }
+        Op::Put { ref value } => (PUT_BYTE_TYPE, value),
         Op::Delete => (DELETE_BYTE_TYPE, &[]),
     };
     let value_len = value.len();

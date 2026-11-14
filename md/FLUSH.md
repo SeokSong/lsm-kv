@@ -1,6 +1,6 @@
 # Flush
 
-**Status:** Designed (Nov 13). Built in 3 PRs: sequence numbers (done), manifest, then background flush + a Store shareable across threads.
+**Status:** Designed (Nov 13). Sequence numbers and the manifest are done. PR 3a is done: WAL segments, manifest in the Store, the four flush steps, crash tests at every step, flush runs inline inside put. PR 3b (flush thread, retries, Store shareable across threads) is next.
 
 ## Purpose
 
@@ -77,12 +77,17 @@ The flush thread takes the oldest frozen memtable and:
 ## Threads and locks
 
 - The Store becomes shareable across threads: callers use `Arc<Store>`, every method takes `&self`, `Store: Send + Sync`
-- Two locks
+- Three locks. Full write-up (the deadlock, the fix, the 10 rules) in [CONCURRENCY.md](CONCURRENCY.md)
 
 | Lock | Protects | Held during |
 |---|---|---|
-| `Mutex<WalState>` | WAL writer, next seq, next file number | The whole put: append, fsync, memtable insert |
-| `Mutex<State>` + `Condvar` | Active memtable, `frozen: Vec<Arc<Memtable>>`, `sstables: Vec<Arc<SstReader>>`, failed flag | Short steps only: insert, lookup, swap |
+| `Mutex<WalState>` | WAL writer, next seq | The whole put: append, fsync, memtable insert |
+| `Mutex<Manifest>` | The manifest (live files, next file number, last seq) | Change + save, a few ms of fsyncs |
+| `Mutex<State>` + `Condvar` | Active memtable, `frozen: Vec<Arc<Memtable>>`, `sstables: Vec<Arc<SstReader>>`, failed + closing flags | Short memory-only steps: insert, lookup, swap |
+
+- The manifest gets its own lock because both the writer (swap) and the flush thread save it
+    - Under State: every get would stall on its fsyncs
+    - Under WAL: deadlock, a put waiting for queue space holds WAL while the flush thread needs it to save the manifest
 
 - Writers hold the WAL lock across both the WAL append and the memtable insert
     - Two puts to the same key land in the WAL and the memtable in the same order
@@ -90,8 +95,9 @@ The flush thread takes the oldest frozen memtable and:
 - Readers never take the WAL lock, so a get never waits behind a 3 ms fsync
 - A get locks State, looks in the active memtable and copies the value out, clones the `Arc`s, unlocks. SSTable reads (the slow part) run with no lock held
     - Works because `get` returns an owned `Vec` and `SstReader` reads take `&self`
-- A put waiting for queue space holds the WAL lock, so other writers wait too (they would anyway). Readers keep going
-- Lock order is always WAL, then State. The flush thread only takes State, so no deadlock
+- A put waiting for queue space holds only the WAL lock, so other writers wait too (they would anyway). Readers keep going
+    - It takes the manifest lock only after it wakes up, so the flush thread can always finish and free the slot
+- Lock order is always WAL -> Manifest -> State. The flush thread never takes the WAL lock
 - Puts from many threads still run one at a time (~350/s on the Mac). Waiting writers make group commit easy later: one fsync for everyone in line
 
 ### Mutex first, then benchmark RwLock

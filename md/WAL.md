@@ -1,6 +1,6 @@
 # Write-Ahead Log (WAL)
 
-**Status:** Done for v1 (single file). Encode, decode, append + fsync, and replay are done and tested (34 tests). Every record carries a sequence number. Segments come with flush.
+**Status:** Done for v1. Encode, decode, append + fsync, and replay are done and tested (34 tests). Every record carries a sequence number. One segment per memtable since PR 3a.
 
 ## Purpose
 
@@ -81,7 +81,11 @@ The purpose of the WAL is to ensure that our writes are durable. The memtable si
 A new segment should start when a flush job is started.
 We are safe to delete a segment after it has been written to the manifest and fsync is compete. If we delete pior to this, we would not be able to restore if fsync or update to manifest fails. Leading us to have incorrect data. 
 
-- V1 for now: one file (`wal.log`). Segments come with flush
+- One segment per memtable, named by file number (`000007.wal`), listed in the manifest
+    - New segment: at a swap, listed in the manifest before the file is created, so a listed segment with no file is just empty and an unlisted one never holds an acked write
+    - Delete: after the flushed SSTable is in the manifest (flush step 3). A crash before the delete leaves an unlisted segment, startup deletes it
+    - Normally only the active segment is on disk
+- The old single `wal.log` is gone
 - When the WAL file is created, its parent directory is fsynced too. Otherwise a crash can lose the new file's directory entry even if its contents were fsynced
 
 ## Failure cases
@@ -126,6 +130,7 @@ We are safe to delete a segment after it has been written to the manifest and fs
     - `Record { seq: u64, key: Vec<u8>, op: Op }`
     - `Op::Put { value: Vec<u8> }` / `Op::Delete`
 - Codec
+    - `validate(record: &Record) -> Result<(), WalError>`: key and value size checks only, encode runs it too. The store calls it before a swap so a rejected put can't trigger a flush
     - `encode(record: &Record) -> Result<Vec<u8>, WalError>`
     - `decode(encoded_record: &[u8]) -> Result<Option<(Record, usize)>, CorruptionReason>`
         - `Ok(Some((record, bytes_used)))`: valid record
