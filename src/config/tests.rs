@@ -13,6 +13,9 @@ fn default_values() {
 
     assert_eq!(config.memtable.flush_threshold_bytes, 32 * 1024 * 1024);
     assert_eq!(config.memtable.max_frozen, 1);
+    assert_eq!(config.sstable.block_size_bytes, 16 * 1024);
+    assert_eq!(config.sstable.restart_interval, 16);
+    assert_eq!(config.sstable.bloom_bits_per_key, 6);
 }
 
 #[test]
@@ -81,4 +84,38 @@ fn missing_file_is_io_error() {
     let result = Config::load(&config_file("does-not-exist.toml"));
 
     assert!(matches!(result, Err(ConfigError::Io(_))));
+}
+
+#[test]
+fn zero_block_size_is_rejected() {
+    let result = Config::from_toml_str("[sstable]\nblock_size_bytes = 0\n");
+
+    assert!(matches!(
+        result,
+        Err(ConfigError::Invalid {
+            field: "sstable.block_size_bytes",
+            ..
+        })
+    ));
+}
+
+#[test]
+fn zero_restart_interval_is_rejected() {
+    let result = Config::from_toml_str("[sstable]\nrestart_interval = 0\n");
+
+    assert!(matches!(
+        result,
+        Err(ConfigError::Invalid {
+            field: "sstable.restart_interval",
+            ..
+        })
+    ));
+}
+
+#[test]
+fn zero_bloom_bits_turns_filter_off() {
+    // 0 is allowed: no bloom filter
+    let config: Config = Config::from_toml_str("[sstable]\nbloom_bits_per_key = 0\n").unwrap();
+
+    assert_eq!(config.sstable.bloom_bits_per_key, 0);
 }

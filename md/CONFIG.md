@@ -1,6 +1,6 @@
 # Config
 
-**Status:** Done for the memtable settings (8 tests). New settings get added as each component needs them.
+**Status:** Done for the memtable and SSTable settings (11 tests). New settings get added as each component needs them.
 
 ## Purpose
 
@@ -36,8 +36,11 @@
 |---|---|---|
 | `memtable.flush_threshold_bytes` | 33,554,432 (32 MiB) | Flush once the memtable's key + value bytes reach this. One flush ~ one SSTable |
 | `memtable.max_frozen` | 1 | Frozen memtables allowed to wait for the background flush before put has to wait |
+| `sstable.block_size_bytes` | 16,384 (16 KiB) | Soft target: a block is closed once it reaches this, a bigger value gets a block to itself |
+| `sstable.restart_interval` | 16 | Every Nth entry in a block stores its full key (prefix compression restart point) |
+| `sstable.bloom_bits_per_key` | 6 | Bloom filter bits per key, ~5-6% false positives. 10 is ~1%. 0 turns the filter off |
 
-- Later: block size, bloom bits per key, SSTable size, fsync policy (every write / group commit / periodic)
+- Later: fsync policy (every write / group commit / periodic)
 
 ## Errors
 
@@ -47,23 +50,25 @@
 - `ConfigError::Invalid { field, reason }`
     - `flush_threshold_bytes` = 0
     - `max_frozen` = 0, the first flush could never start
+    - `sstable.block_size_bytes` = 0, `sstable.restart_interval` = 0
 
 ## Interface
 
 - `Config::default() -> Config`
 - `Config::load(path: &Path) -> Result<Config, ConfigError>`
 - `Config::from_toml_str(text: &str) -> Result<Config, ConfigError>`
-- `config.memtable.flush_threshold_bytes`, `config.memtable.max_frozen`
+- `config.memtable.*`, `config.sstable.*`
 
 ## Tests
 
-- `src/config/tests.rs`: 8 tests, done
+- `src/config/tests.rs`: 11 tests, done
     - Default values
     - `config/default.toml` matches the code defaults
     - Profiles only override what they set
     - Empty file is all defaults
     - Unknown setting is rejected
     - Zero flush threshold and zero max frozen are rejected
+    - Zero block size and zero restart interval are rejected, zero bloom bits is allowed (filter off)
     - Missing file is an Io error
 
 ## See also

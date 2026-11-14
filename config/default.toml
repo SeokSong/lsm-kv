@@ -5,3 +5,11 @@
 flush_threshold_bytes = 33_554_432
 # frozen memtables allowed to wait for the background flush before put has to wait
 max_frozen = 1
+
+[sstable]
+# soft target: a block is closed once it reaches this, a bigger value gets a block to itself
+block_size_bytes = 16_384
+# every Nth entry in a block stores its full key (prefix compression restart point)
+restart_interval = 16
+# bloom filter bits per key, 6 is ~5-6% false positives, 10 is ~1%. 0 turns the filter off
+bloom_bits_per_key = 6
