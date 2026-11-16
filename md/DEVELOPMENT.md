@@ -36,6 +36,14 @@ Run from the repo root (`~/dev/lsm-tree-key-value-store/lsm-kv`):
 
 - Criterion's HTML reports land in the `target` volume. To keep one, copy it out: `docker compose run --rm dev bash -c "cp -r /target/criterion /workspace/criterion-report"` (not in `.gitignore`, so don't commit it)
 
+## Benchmarks on Linux x86
+
+- `.github/workflows/bench.yml` runs `cargo bench` on a GitHub Actions `ubuntu-latest` runner, only when started by hand
+- Start: Actions tab -> Bench -> Run workflow (optional: seconds per case, one benchmark), or `gh workflow run bench.yml`
+- Watch: `gh run watch`, or the run page on GitHub
+- Results: the run's summary page, or `gh run download <run id>` for `bench.txt`, `machine.txt`, and the criterion HTML report
+- Runners differ (CPU, disk), so run it several times and compare only runs on the same CPU. Results in [BENCHMARKS.md](BENCHMARKS.md)
+
 ## VS Code
 
 - Install the Dev Containers extension

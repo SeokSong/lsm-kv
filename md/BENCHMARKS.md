@@ -1,6 +1,6 @@
 # Benchmarks
 
-**Status:** Criterion benchmarks for CRC-32, memtable get, fsync / group commit / `Store::put`, and a full-size SSTable, run on the Mac and on Linux in the Docker dev container (Nov 16). CPU and memory numbers from the container are usable, its fsync numbers aren't: real fsync numbers need Linux on real hardware. `Mutex` vs `RwLock` comes after compaction (PR 4e).
+**Status:** Criterion benchmarks for CRC-32, memtable get, fsync / group commit / `Store::put`, and a full-size SSTable, run on the Mac and on Linux in the Docker dev container (Nov 16). CPU and memory numbers from the container are usable, its fsync numbers aren't. Linux x86 numbers, fsync included, come from the `Bench` GitHub Actions workflow (4 runs, Nov 16). `Mutex` vs `RwLock` comes after compaction (PR 4e).
 
 ## Questions to answer
 
@@ -40,7 +40,11 @@
     - Run with `docker compose run --rm dev cargo bench`
     - Good for CPU and memory work (CRC, memtable, warm-cache SSTable reads): Linux kernel and allocator, real cores
     - Not for fsync: it reaches the VM's virtual disk, and the hypervisor decides when that reaches the SSD. Not for cold-cache reads either: macOS can cache the VM's disk image
-    - Not x86: the CRC rerun on x86 still needs other hardware
+    - Not x86: x86 numbers come from GitHub Actions
+- GitHub Actions: `.github/workflows/bench.yml`, started by hand (Actions tab -> Bench -> Run workflow, or `gh workflow run bench.yml`)
+    - `ubuntu-latest` runner: Azure VM, 4 cores, x86. The CPU and disk change between runs, each run saves them in `machine.txt`
+    - Results: the run's summary page, and a zip (`bench.txt`, `machine.txt`, criterion HTML report) kept 90 days. `gh run download <run id>`
+    - Free for a public repo
 - `--release` builds
 - CRC: criterion 0.8.2, `benchmark/crc.rs`, run with `cargo bench --bench crc`
 - Memtable get: criterion, `benchmark/memtable_get.rs`, run with `cargo bench --bench memtable_get`
@@ -182,6 +186,42 @@ Short run (3 s per case), every benchmark in one `cargo bench` run. Mac numbers 
 - CPU and memory work is 0-40% slower in the container than on macOS. The same SSTable benchmark run alone earlier that day was 10-20% faster than the Mac, so run-to-run noise in the VM is about as big as the gap. Don't read small differences into these
 - fsync in the VM is all over the place: the same `sync_data` call took 1.2 ms to 130 ms in one run, `sync_all` (more work on real Linux) came out faster than `sync_data`, and 1 record per sync was slower than 64. That's the virtual disk, not Linux
 - The Mac's ~3 ms fsync stays the reference until there's a run on real Linux hardware with an NVMe drive (week 6, for group commit)
+
+### Linux x86 on GitHub Actions, 4 runs (2026-11-16)
+
+5 s per case, every benchmark, commit `main` after PR #14. Each run got a different runner:
+
+| Run | CPU (4 cores) | Disk under `/tmp` |
+|---|---|---|
+| A | AMD EPYC 9V74 | Azure NVMe (`MSFT NVMe Accelerator`) |
+| B | AMD EPYC 7763 | Azure `Virtual Disk` |
+| C | AMD EPYC 9V45 | Azure NVMe (`MSFT NVMe Accelerator`) |
+| D | AMD EPYC 7763 | Azure `Virtual Disk` |
+
+| Benchmark | A | B | C | D | Spread | Mac |
+|---|---|---|---|---|---|---|
+| crc32fast 22 B / 2 KB / 64 KB | 8 ns / 58 ns / 1.1 us | 10 ns / 87 ns / 2.6 us | 6 ns / 43 ns / 1.0 us | 10 ns / 87 ns / 2.6 us | 1.8-2.6x | 2.7 ns / 30 ns / 0.73 us |
+| crc32c 22 B / 2 KB / 64 KB | 8 ns / 115 ns / 2.5 us | 10 ns / 129 ns / 2.8 us | 6 ns / 76 ns / 2.1 us | 10 ns / 129 ns / 2.8 us | 1.4-1.7x | 5.4 ns / 110 ns / 2.4 us |
+| Memtable `to_vec` | 488 ns | 447 ns | 410 ns | 467 ns | 1.2x | 312 ns |
+| Write only, 2,030 B | 9.1 us | 4.7 us | 9.3 us | 4.7 us | 2.0x | 2.7 us |
+| Write + `sync_data` | 816 us | 254 us | 257 us | 375 us | 3.2x | 3.2 ms |
+| Write + `sync_all` | 727 us | 253 us | 222 us | 364 us | 3.3x | 3.2 ms |
+| `Store::put` | 299 us | 254 us | 240 us | 328 us | 1.4x | 3.1 ms |
+| Group commit 1 / 4 / 16 / 64 per sync | 452 / 488 / 783 / 1,116 us | 252 / 327 / 395 / 620 us | 217 / 271 / 331 / 710 us | 350 / 387 / 440 / 624 us | 1.8-2.4x | 3.0-3.2 ms each |
+| SSTable flush, 32 MiB | 159 ms | 78 ms | 131 ms | 78 ms | 2.0x | 57 ms |
+| SSTable open | 72 us | 90 us | 82 us | 90 us | 1.2x | 62 us |
+| SSTable get, present | 3.6 us | 3.7 us | 2.4 us | 4.0 us | 1.7x | 2.1 us |
+| SSTable get, missing, bloom / no bloom | 0.25 / 3.6 us | 0.28 / 3.6 us | 0.16 / 2.3 us | 0.28 / 3.8 us | 1.6-1.8x | 0.20 / 2.1 us |
+| SSTable iterate all | 7.7 ms | 8.5 ms | 5.4 ms | 8.7 ms | 1.6x | 5.1 ms |
+
+- The noise is which machine you get, not run to run: B and D (same CPU, same disk) are within ~5% on every CPU benchmark. Only compare runs on the same CPU model, and write the CPU next to every number
+- fsync: `Store::put` is 0.24-0.33 ms on every runner, ~3,000-4,000 puts/s, ~10x the Mac. The Mac's `F_FULLFSYNC` waits for the drive's own cache. Azure's disks acknowledge the flush earlier and protect the data on their side, so the number reflects that storage, not "Linux". Production databases on cloud VMs get the same
+- A race replay at max speed (~6,000 puts) takes ~1.5-2 s here, against ~19 s on the Mac
+- `sync_all` costs the same as `sync_data`: every WAL append grows the file, so `fdatasync` has to flush the size change anyway. `sync_data` stays, no reason to change
+- Group commit still pays off, but less than on the Mac: 64 records per sync costs ~2.5x one record (on the Mac it cost the same). Per record that's ~10 us at 64 vs ~250 us at 1, so ~25x the throughput. Week 6 still worth doing
+- CRC: crc32fast is never slower. Same speed at 22 B (x86 has a CRC32C instruction, so crc32c is fast on tiny buffers), 1.1-2x faster from 2 KB up. The WAL choice holds on x86 too
+- The SSTable flush (78-159 ms) is slower than the Mac (57 ms) but still small next to the ~4-6 s it takes to fill a memtable (16,678 puts) at this put rate
+- Bloom filter: ~13-15x faster misses on every runner
 
 ## See also
 
