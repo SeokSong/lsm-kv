@@ -22,3 +22,13 @@ harness = false
 name = "memtable_get"
 path = "benchmark/memtable_get.rs"
 harness = false
+
+[[bench]]
+name = "fsync"
+path = "benchmark/fsync.rs"
+harness = false
+
+[[bench]]
+name = "sstable"
+path = "benchmark/sstable.rs"
+harness = false
