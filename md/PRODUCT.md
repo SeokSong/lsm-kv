@@ -77,6 +77,7 @@
 - Sectors differ by source: iRacing's Spa has 4 split points, F1 uses 3 sectors
 - Installer signing: unsigned `.exe` shows a SmartScreen warning. Fine for friends, a certificate costs money
 - A sync server, if the friend group outgrows sending files
+- Faster drivers' telemetry (kept in mind, Nov 16): `.ibt` files have none of it, only other drivers' identity. The clean route is consent, drivers who choose to share their laps. Details in [IBT.md](IBT.md#other-drivers-telemetry-idea-not-planned)
 
 ## See also
 

@@ -54,9 +54,23 @@
 
 ## Privacy
 
-- Online sessions list every driver in the session info (names, iRacing ids): 20 in the Mustang file
-- There are also per-car arrays (`CarIdx...` channels: every car's lap distance, position, ...)
+- Telemetry channels are only the user's own car: 286 single-value channels and one with 6 values, no per-car (`CarIdx...`) arrays. Those exist in iRacing's live SDK, not in `.ibt` files (checked Nov 16, corrects an earlier note)
+- But online sessions list every driver in the session info: name, iRacing id, iRating, license, club, team, car, paint designs, incidents, and some lap times (`ResultsPositions`). 20 drivers in the Mustang file
 - So the reader keeps only the user's own car (`DriverCarIdx`) and the track / car info. Nothing about other drivers goes into the store or into an export
+
+### Other drivers' telemetry (idea, not planned)
+
+Seeing a faster driver's telemetry would be useful. Where it could come from, and the catch:
+
+| Source | What you'd get | Concern |
+|---|---|---|
+| `.ibt` files | Nothing: only identity and some lap times | Their identity is personal data, so it's stripped |
+| iRacing live SDK, per-car arrays during a session | Other cars' lap distance, position, and some state (gear, RPM, steering, as far as I know), no throttle or brake | Recording people who never agreed to it. Check iRacing's terms before even trying |
+| Faster drivers who choose to share (friends, an opt-in "publish my laps") | Full telemetry | None if they agreed. This is how free sites like Garage 61 do it |
+| Paid reference laps (VRS datapacks and others) | Full telemetry | Their content, not ours to copy or redistribute |
+
+- The only clean route is consent: drivers share their own laps on purpose. That fits the file sharing model already
+- Names and ids are personal data in privacy law (GDPR in the EU), which is why they never go into the store
 
 ## Tool
 
