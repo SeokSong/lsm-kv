@@ -10,6 +10,7 @@ use serde::Deserialize;
 pub struct Config {
     pub memtable: MemtableConfig,
     pub sstable: SstableConfig,
+    pub flush: FlushConfig,
 }
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]
@@ -47,6 +48,24 @@ impl Default for SstableConfig {
             block_size_bytes: 16 * 1024,
             restart_interval: 16,
             bloom_bits_per_key: 6,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct FlushConfig {
+    // tries per frozen memtable before the store is marked failed
+    pub max_attempts: u32,
+    // wait before the 2nd try, doubles after each failure: 100, 200, 400 ms
+    pub retry_backoff_ms: u64,
+}
+
+impl Default for FlushConfig {
+    fn default() -> FlushConfig {
+        FlushConfig {
+            max_attempts: 3,
+            retry_backoff_ms: 100,
         }
     }
 }
@@ -109,6 +128,13 @@ impl Config {
         if self.sstable.restart_interval == 0 {
             return Err(ConfigError::Invalid {
                 field: "sstable.restart_interval",
+                reason: "must be at least 1",
+            });
+        }
+        // 0 tries would mark the store failed before a flush ever ran
+        if self.flush.max_attempts == 0 {
+            return Err(ConfigError::Invalid {
+                field: "flush.max_attempts",
                 reason: "must be at least 1",
             });
         }
