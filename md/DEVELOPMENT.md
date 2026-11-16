@@ -33,6 +33,7 @@ Run from the repo root (`~/dev/lsm-tree-key-value-store/lsm-kv`):
 | All benchmarks | `docker compose run --rm dev cargo bench` |
 | One benchmark, short run | `docker compose run --rm dev cargo bench --bench sstable -- --warm-up-time 1 --measurement-time 3` |
 | A shell in the container | `docker compose run --rm dev bash` |
+| Everything CI checks (fmt, clippy, tests, benchmarks build) | `scripts/check.sh`, or `scripts/check.sh merge` for only tests matching `merge` |
 
 - Criterion's HTML reports land in the `target` volume. To keep one, copy it out: `docker compose run --rm dev bash -c "cp -r /target/criterion /workspace/criterion-report"` (not in `.gitignore`, so don't commit it)
 

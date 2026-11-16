@@ -1,6 +1,6 @@
 # SSTable
 
-**Status:** Writer and reader done and tested (bloom filter included). Flush, compaction, and wiring into the Store come next.
+**Status:** Writer and reader done and tested (bloom filter included), used by the Store for flush and reads. `range` added in PR 4b for the merge iterator. Compaction comes next.
 
 ## Purpose
 
@@ -127,6 +127,7 @@ block:   | entry | entry | ... | restart offsets 4B each | restart count 4B | CR
     - `SstReader::open(path: &Path) -> Result<SstReader, SstError>`
     - `get(&self, key: &[u8]) -> Result<SstLookup, SstError>`: `Found(Vec<u8>)` / `Deleted` / `NotFound`
     - `iter(&self) -> SstIter`: every entry as a `Record` (seq, key, op) in key order, tombstones included. Stops at the first bad block instead of skipping it
+    - `range(&self, start: &[u8], end: &[u8]) -> SstIter`: entries with `start <= key < end`. Starts at the first block that can hold `start` (index lookup), stops at the first key `>= end`. `end <= start` is an empty range. See [MERGE.md](MERGE.md)
     - `block_count(&self)`, `path(&self)`
 - Reads take `&self` (`read_exact_at` doesn't move a file position), so one open SSTable can be shared with the flush thread later without a lock
 - `read_exact_at` is Unix only (Linux and macOS)
@@ -136,7 +137,7 @@ block:   | entry | entry | ... | restart offsets 4B each | restart count 4B | CR
 - Block (`src/sstable/block/tests.rs`): round trip, seqs survive (0 and u64::MAX), prefix compression shrinks the block, get every key for restart intervals 1 / 2 / 3 / 16 / 100, missing keys, bit flips fail the CRC, every truncation is an error not a panic, bad entry with a valid CRC, builder resets between blocks
 - Bloom (`src/sstable/bloom/tests.rs`): pinned hash values, no false negatives, false positive rate at 6 and 10 bits/key, k per bits/key, encode/decode, CRC, every truncation
 - Index + footer (`src/sstable/index/tests.rs`): round trip, find block by last key, CRC, every truncation, footer is 22 bytes, bad magic / version, sections must fit before the footer
-- SSTable (`src/sstable/reader/tests.rs`): write a memtable then get every key (values and tombstones), missing keys, iter matches the memtable (seqs included), first / last key and min / max seq, 64 KiB value bigger than a block, no bloom filter, bloom skips most missing keys, out of order and duplicate keys rejected, empty SSTable leaves no files, file only appears after finish, corrupt block reports its offset, bad magic, every truncation of a whole file fails open, random bytes fail open
+- SSTable (`src/sstable/reader/tests.rs`): write a memtable then get every key (values and tombstones), missing keys, iter matches the memtable (seqs included), first / last key and min / max seq, 64 KiB value bigger than a block, no bloom filter, bloom skips most missing keys, out of order and duplicate keys rejected, empty SSTable leaves no files, file only appears after finish, corrupt block reports its offset, bad magic, every truncation of a whole file fails open, random bytes fail open, `range` matches a filtered `iter` for every pair of 24 bounds, bounds that aren't keys, empty and backwards ranges, one-key range with a tombstone
 
 ## Open questions
 

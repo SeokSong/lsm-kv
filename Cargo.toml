@@ -38,3 +38,8 @@ harness = false
 name = "sstable"
 path = "benchmark/sstable.rs"
 harness = false
+
+[[bench]]
+name = "merge"
+path = "benchmark/merge.rs"
+harness = false

@@ -52,6 +52,7 @@
     - Raw appends of a 2,030 byte record (2 KB put with the 8-byte seq): write only, write + `sync_data`, write + `sync_all`
     - Group commit preview: 1 / 4 / 16 / 64 records, one `sync_data`
     - `Store::put` end to end, flush threshold raised to 1 GiB so no flush lands in the measurement
+- Merge: criterion, `benchmark/merge.rs`, run with `cargo bench --bench merge`
 - Full SSTable: criterion, `benchmark/sstable.rs`, run with `cargo bench --bench sstable`
     - Fake data with the real shape: 12-byte telemetry keys, 20 cars, 2,000 byte values, filled until the 32 MiB flush threshold like the store does
     - No value compression, so value contents don't change the timings, only their size. F1 data isn't needed here
@@ -222,6 +223,17 @@ Short run (3 s per case), every benchmark in one `cargo bench` run. Mac numbers 
 - CRC: crc32fast is never slower. Same speed at 22 B (x86 has a CRC32C instruction, so crc32c is fast on tiny buffers), 1.1-2x faster from 2 KB up. The WAL choice holds on x86 too
 - The SSTable flush (78-159 ms) is slower than the Mac (57 ms) but still small next to the ~4-6 s it takes to fill a memtable (16,678 puts) at this put rate
 - Bloom filter: ~13-15x faster misses on every runner
+
+### Merge iterator (2026-11-16, Linux dev container)
+
+`benchmark/merge.rs`, short run (3 s per case). 4 overlapping SSTables, ~8 MiB each, 42 MB total, 20,800 entries, 16,000 distinct keys.
+
+| Case | Time | Throughput |
+|---|---|---|
+| Read the 4 files one after another | ~8.3 ms | ~4.7 GiB/s |
+| Merge them (newest seq per key) | ~10.2 ms | ~3.8 GiB/s |
+
+- The merge adds ~20% over plain reads. A compaction's cost is writing the output (50-160 ms per 32 MiB SSTable with fsync), not merging. Details in [MERGE.md](MERGE.md)
 
 ## See also
 

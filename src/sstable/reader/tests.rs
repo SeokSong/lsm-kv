@@ -325,3 +325,101 @@ fn not_a_sstable_fails_open() {
 
     assert!(SstReader::open(&path).is_err());
 }
+
+// what range must return: the iter() entries with start <= key < end
+fn expected_range(reader: &SstReader, start: &[u8], end: &[u8]) -> Vec<Record> {
+    reader
+        .iter()
+        .map(|entry| entry.unwrap())
+        .filter(|record| record.key.as_slice() >= start && record.key.as_slice() < end)
+        .collect()
+}
+
+fn range_of(reader: &SstReader, start: &[u8], end: &[u8]) -> Vec<Record> {
+    reader
+        .range(start, end)
+        .map(|entry| entry.unwrap())
+        .collect()
+}
+
+#[test]
+fn range_matches_filtered_iter_across_blocks() {
+    let dir: TempDir = TempDir::new().unwrap();
+    let path: PathBuf = dir.path().join("000001.sst");
+    let memtable: Memtable = sample_memtable(300, 100);
+    write_memtable(&path, &memtable, &small_block_config());
+    let reader: SstReader = SstReader::open(&path).unwrap();
+    assert!(reader.block_count() > 10);
+
+    // every pair of bounds from a spread of keys: inside blocks, on block edges, tombstones
+    let bounds: Vec<Vec<u8>> = (0..300)
+        .step_by(13)
+        .map(|i| telemetry_key((i / 3) as u16 + 1, (i % 3) as u8 + 1, 1))
+        .collect();
+    for start in &bounds {
+        for end in &bounds {
+            assert_eq!(
+                range_of(&reader, start, end),
+                expected_range(&reader, start, end),
+                "range {start:?}..{end:?}"
+            );
+        }
+    }
+}
+
+#[test]
+fn range_bounds_that_are_not_keys() {
+    let dir: TempDir = TempDir::new().unwrap();
+    let path: PathBuf = dir.path().join("000001.sst");
+    let memtable: Memtable = sample_memtable(300, 100);
+    write_memtable(&path, &memtable, &small_block_config());
+    let reader: SstReader = SstReader::open(&path).unwrap();
+
+    // seq 2 doesn't exist: these bounds fall between real keys
+    let start: Vec<u8> = telemetry_key(20, 2, 2);
+    let end: Vec<u8> = telemetry_key(60, 1, 2);
+    let records: Vec<Record> = range_of(&reader, &start, &end);
+    assert_eq!(records, expected_range(&reader, &start, &end));
+    assert_eq!(records.first().unwrap().key, telemetry_key(20, 3, 1));
+    assert_eq!(records.last().unwrap().key, telemetry_key(60, 1, 1));
+
+    // before the first key to after the last: everything
+    let all: Vec<Record> = range_of(&reader, &[0x00], &[0xFF]);
+    assert_eq!(all.len(), 300);
+
+    // entirely before or after the file
+    assert!(range_of(&reader, &[0x00], &[0x00, 0x01]).is_empty());
+    assert!(range_of(&reader, &[0xF0], &[0xFF]).is_empty());
+}
+
+#[test]
+fn empty_and_backwards_ranges() {
+    let dir: TempDir = TempDir::new().unwrap();
+    let path: PathBuf = dir.path().join("000001.sst");
+    let memtable: Memtable = sample_memtable(50, 100);
+    write_memtable(&path, &memtable, &small_block_config());
+    let reader: SstReader = SstReader::open(&path).unwrap();
+
+    let key: Vec<u8> = telemetry_key(5, 1, 1);
+    // start inclusive, end exclusive: [key, key) is empty
+    assert!(range_of(&reader, &key, &key).is_empty());
+    // end before start is an empty range, not a panic, same as Memtable::range
+    assert!(range_of(&reader, &telemetry_key(9, 1, 1), &key).is_empty());
+}
+
+#[test]
+fn range_of_one_key_includes_tombstones() {
+    let dir: TempDir = TempDir::new().unwrap();
+    let path: PathBuf = dir.path().join("000001.sst");
+    let memtable: Memtable = sample_memtable(50, 100);
+    write_memtable(&path, &memtable, &small_block_config());
+    let reader: SstReader = SstReader::open(&path).unwrap();
+
+    // i = 6 is a tombstone in sample_memtable
+    let key: Vec<u8> = telemetry_key(3, 1, 1);
+    let mut end: Vec<u8> = key.clone();
+    end.push(0);
+    let records: Vec<Record> = range_of(&reader, &key, &end);
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0].op, Op::Delete);
+}
