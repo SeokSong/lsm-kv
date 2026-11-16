@@ -160,6 +160,16 @@ impl Store {
     fn fail_next_flushes(&self, count: u32) {
         self.inner.hooks.fail_flushes.store(count, Ordering::SeqCst);
     }
+
+    // every memtable waiting out a retry becomes due now, so a test decides when a retry
+    // happens instead of racing the backoff timer
+    fn retry_now(&self) {
+        let mut state: MutexGuard<'_, State> = self.inner.state.lock().unwrap();
+        for slot in state.frozen.iter_mut() {
+            slot.retry_at = None;
+        }
+        self.inner.state_changed.notify_all();
+    }
 }
 
 #[test]
@@ -897,14 +907,15 @@ fn out_of_order_flush_still_reads_the_newest_value() {
         },
         flush: FlushConfig {
             max_attempts: 3,
-            // long enough for a newer memtable to flush first
-            retry_backoff_ms: 300,
+            // A's retry never comes by itself during the test: retry_now releases it once B
+            // has flushed. a short backoff made this a race against slow CI machines
+            retry_backoff_ms: 600_000,
         },
         ..Config::default()
     };
-    let store: Store = Store::open(dir.path(), config.clone()).unwrap();
+    let store: Arc<Store> = Arc::new(Store::open(dir.path(), config.clone()).unwrap());
 
-    // memtable A: key 0 = old value. its first flush attempt fails and waits 300 ms
+    // memtable A: key 0 = old value. its first flush attempt fails, its retry waits
     store.fail_next_flushes(1);
     store.put(nth_key(0), vec![0xAA; 100]).unwrap();
     store.put(nth_key(1), vec![1; 100]).unwrap();
@@ -913,7 +924,25 @@ fn out_of_order_flush_still_reads_the_newest_value() {
     store.put(nth_key(2), vec![2; 100]).unwrap();
     // swaps B out
     store.put(nth_key(3), vec![3; 100]).unwrap();
-    store.wait_for_flushes();
+
+    // B flushes on its own, A is still waiting
+    let waiting: Arc<Store> = store.clone();
+    within(10, move || {
+        while waiting.sstable_count() < 1 {
+            thread::sleep(Duration::from_millis(1));
+        }
+    });
+    assert_eq!(
+        store.frozen_count(),
+        1,
+        "A should still be waiting to retry"
+    );
+    assert_eq!(store.stats().failed_flush_attempts, 1);
+
+    // now A's retry
+    store.retry_now();
+    let flushing: Arc<Store> = store.clone();
+    within(10, move || flushing.wait_for_flushes());
 
     // B got the lower file number (flushed first), A the higher one. reads order by seq
     let manifest: Manifest = store.manifest();
@@ -927,6 +956,7 @@ fn out_of_order_flush_still_reads_the_newest_value() {
     );
 
     assert_eq!(store.get(&nth_key(0)).unwrap(), Some(vec![0xBB; 100]));
+    store.close().unwrap();
     drop(store);
 
     // same answer when the SSTables are opened from the manifest

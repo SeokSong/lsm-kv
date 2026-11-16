@@ -211,7 +211,9 @@ In `src/store/tests.rs`. Everything that could hang runs under `within(seconds, 
 | `many_threads_put_and_get_at_once` | 4 writers + 2 readers with constant swaps, stalls, and flushes, every key right after and after reopen |
 | `dropping_the_last_arc_stops_the_flush_thread` | Drop runs close, no hang |
 
-- Test hooks (`cfg(test)` only): pause the flush thread before it writes an SSTable, make the next N SSTable writes fail
+- Test hooks (`cfg(test)` only): pause the flush thread before it writes an SSTable, make the next N SSTable writes fail, `retry_now` makes every waiting retry due at once
+- Never make a test's outcome depend on a timer racing real work. `out_of_order_flush_still_reads_the_newest_value` assumed the next memtable would swap out within a 300 ms retry backoff, and failed once on a CI runner (Nov 16). Now the backoff is 10 minutes and the test releases the retry with `retry_now` after the newer memtable flushed. Timeouts as a deadlock guard (`within`) are fine: they only decide pass or fail when something hangs
+- `scripts/repeat-tests.sh 50` runs the suite 50 times to catch flaky tests (0 of 50 failed after the fix)
 - Ran the store tests 25 times in a row: no failures, no hangs
 - Checked the deadlock test can fail: holding the manifest lock while waiting for queue space (breaking rule 3) deadlocks the store, and `put_waits_while_the_queue_is_full_and_reads_keep_going` fails after 5 s with "put never woke up"
 
