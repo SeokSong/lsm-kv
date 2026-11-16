@@ -1,0 +1,17 @@
+# docker compose run --rm dev cargo test
+services:
+  dev:
+    build: .
+    image: lsm-kv-dev
+    volumes:
+      # the repo, live: edits on the mac show up in the container right away
+      - .:/workspace
+      # kept between runs so crates aren't downloaded and rebuilt every time
+      - cargo-registry:/usr/local/cargo/registry
+      - target:/target
+    # VS Code attaches to this when it opens the folder in the container
+    command: sleep infinity
+
+volumes:
+  cargo-registry:
+  target:
