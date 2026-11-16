@@ -68,7 +68,8 @@ The user can request the live feed but for now that is out of scope
 | Manifest | List of live SSTables and the current WAL, the source of truth on startup | Done: whole-file rewrite with CRC, tmp + rename, file naming, obsolete files (29 tests). Used by the Store | [MANIFEST.md](MANIFEST.md) |
 | Concurrency | Lock design for the background flush: three locks, lock order, 10 rules to avoid deadlock | Done: built and tested, deadlock test checked to fail when a rule is broken | [CONCURRENCY.md](CONCURRENCY.md) |
 | Crash recovery | Rebuilds state on startup from the manifest + WAL replay | Done for 3a: manifest, cleanup, SSTables, segment replay, tested at every flush step. kill -9 tests in week 5 | [RECOVERY.md](RECOVERY.md) |
-| Benchmarks | Microbenchmarks now, F1 replay and YCSB-style workloads later | In progress: CRC-32, write + fsync, memtable get, full-size SSTable measured on Mac | [BENCHMARKS.md](BENCHMARKS.md) |
+| Benchmarks | Microbenchmarks now, F1 replay and YCSB-style workloads later | In progress: CRC-32, fsync + group commit + `Store::put`, memtable get, full-size SSTable as criterion benches, run on Mac and in the Linux dev container. Real-hardware Linux fsync still to do | [BENCHMARKS.md](BENCHMARKS.md) |
+| Development | Linux dev container: Docker + VS Code Dev Containers, every cargo command runs in it | Done (Nov 16) | [DEVELOPMENT.md](DEVELOPMENT.md) |
 | Config | Tuning settings in TOML (`config/*.toml`), format constants stay in code | Done for memtable + SSTable settings (11 tests) | [CONFIG.md](CONFIG.md) |
 | Store | Public API: open (replay), put / delete (WAL then memtable), get | Done for v1 writes + reads: WAL segments, manifest, background flush, get across memtables + SSTables, shareable across threads, close (39 tests). Scan in week 5 | [STORE.md](STORE.md) |
 

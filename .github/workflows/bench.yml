@@ -1,0 +1,83 @@
+name: Bench
+
+# started by hand: Actions tab -> Bench -> Run workflow, or `gh workflow run bench.yml`.
+# never on push, a full run takes minutes and the numbers are only useful when asked for
+on:
+  workflow_dispatch:
+    inputs:
+      measurement_time:
+        description: "seconds criterion measures each benchmark case"
+        default: "5"
+      bench:
+        description: "one benchmark (crc, memtable_get, fsync, sstable), empty for all"
+        default: ""
+
+env:
+  CARGO_TERM_COLOR: never
+
+jobs:
+  bench:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      # runners are shared VMs that differ between runs, so every result file says
+      # which CPU, kernel, and disk it came from
+      - name: record the machine
+        run: |
+          {
+            echo "date: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "commit: $GITHUB_SHA"
+            echo "run: $GITHUB_RUN_ID attempt $GITHUB_RUN_ATTEMPT"
+            rustc --version
+            uname -a
+            echo
+            lscpu
+            echo
+            free -h
+            echo
+            # the disk tempfile writes to (/tmp), where the fsync benchmark runs
+            df -hT /tmp
+            lsblk -o NAME,SIZE,TYPE,ROTA,MODEL
+          } | tee machine.txt
+
+      # inputs come in as env vars, never pasted into the script with ${{ }}:
+      # pasted text runs as shell code (script injection)
+      - name: cargo bench
+        env:
+          BENCH: ${{ inputs.bench }}
+          MEASUREMENT_TIME: ${{ inputs.measurement_time }}
+        run: |
+          set -o pipefail
+          if [ -n "$BENCH" ]; then
+            cargo bench --bench "$BENCH" -- --measurement-time "$MEASUREMENT_TIME" 2>&1 | tee bench.txt
+          else
+            cargo bench -- --measurement-time "$MEASUREMENT_TIME" 2>&1 | tee bench.txt
+          fi
+
+      # the time lines only, on the run's summary page
+      - name: summary
+        run: |
+          {
+            echo '## Machine'
+            echo '```'
+            grep -E 'Model name|^CPU\(s\)' machine.txt
+            df -hT /tmp | tail -1
+            echo '```'
+            echo '## Results'
+            echo '```'
+            grep -E 'sstable:|time:|^[a-z_]+/' bench.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: upload results
+        uses: actions/upload-artifact@v4
+        with:
+          name: bench-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            machine.txt
+            bench.txt
+            target/criterion
+          retention-days: 90

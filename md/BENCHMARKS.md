@@ -1,6 +1,6 @@
 # Benchmarks
 
-**Status:** Criterion benchmarks for CRC-32, memtable get, fsync / group commit / `Store::put`, and a full-size SSTable, all run on the Mac (Nov 16). Rerun on Linux before using as results. `Mutex` vs `RwLock` comes after compaction (PR 4e).
+**Status:** Criterion benchmarks for CRC-32, memtable get, fsync / group commit / `Store::put`, and a full-size SSTable, run on the Mac and on Linux in the Docker dev container (Nov 16). CPU and memory numbers from the container are usable, its fsync numbers aren't: real fsync numbers need Linux on real hardware. `Mutex` vs `RwLock` comes after compaction (PR 4e).
 
 ## Questions to answer
 
@@ -35,7 +35,12 @@
 
 ## Setup
 
-- MacBook Pro, Apple Silicon (aarch64), macOS
+- MacBook Pro, Apple M3 Pro (aarch64), macOS
+- Linux: the dev container (`Dockerfile`, `compose.yaml`), Docker Desktop's Linux VM, kernel 6.12, Rust 1.100, same M3 Pro cores
+    - Run with `docker compose run --rm dev cargo bench`
+    - Good for CPU and memory work (CRC, memtable, warm-cache SSTable reads): Linux kernel and allocator, real cores
+    - Not for fsync: it reaches the VM's virtual disk, and the hypervisor decides when that reaches the SSD. Not for cold-cache reads either: macOS can cache the VM's disk image
+    - Not x86: the CRC rerun on x86 still needs other hardware
 - `--release` builds
 - CRC: criterion 0.8.2, `benchmark/crc.rs`, run with `cargo bench --bench crc`
 - Memtable get: criterion, `benchmark/memtable_get.rs`, run with `cargo bench --bench memtable_get`
@@ -152,6 +157,31 @@ Revisit zero-copy reads when:
 - Profiling shows allocation or memory-copy overhead is significant
 - We're repeatedly copying the same payload through multiple layers
 - The workload is latency-sensitive
+
+### Linux in the dev container vs Mac (2026-11-16)
+
+Short run (3 s per case), every benchmark in one `cargo bench` run. Mac numbers are the runs above.
+
+| Benchmark | Mac | Linux (Docker VM) |
+|---|---|---|
+| crc32fast, 22 B / 2 KB / 5 KB / 64 KB | 2.7 ns / 30 ns / 64 ns / 0.73 us | 3.8 ns / 39 ns / 89 ns / 1.1 us |
+| crc32c, 22 B / 2 KB / 5 KB / 64 KB | 5.4 ns / 110 ns / 239 ns / 2.4 us | 9.4 ns / 190 ns / 436 ns / 5.0 us |
+| Memtable get: borrow / copy / `to_vec` | 113 / 362 / 312 ns | 165 / 394 / 388 ns |
+| SSTable open | ~62 us | ~50 us |
+| SSTable get, present | ~2.1 us | ~2.7 us |
+| SSTable get, missing, bloom / no bloom | ~0.20 / ~2.1 us | ~0.20 / ~2.4 us |
+| SSTable iterate all | ~5.1 ms | ~6.2 ms |
+| Write only, 2,030 B | ~2.7 us | ~5.7 us |
+| Write + `sync_data` | ~3.2 ms | 1.2-130 ms (unusable) |
+| Write + `sync_all` | ~3.2 ms | ~1.3 ms (unusable) |
+| `Store::put` | ~3.1 ms | 0.3-47 ms (unusable) |
+| Group commit, 1 / 4 / 16 / 64 records per sync | ~3.0-3.2 ms per batch | 338 ms / 0.53 / 0.64 / 0.70 ms per batch (unusable) |
+| Full flush, 32 MiB | ~57 ms | ~76 ms (has fsyncs, unusable) |
+
+- crc32fast is still 2.5-4.5x faster than crc32c on Linux, so the WAL choice holds on aarch64 Linux too. x86 is still unchecked
+- CPU and memory work is 0-40% slower in the container than on macOS. The same SSTable benchmark run alone earlier that day was 10-20% faster than the Mac, so run-to-run noise in the VM is about as big as the gap. Don't read small differences into these
+- fsync in the VM is all over the place: the same `sync_data` call took 1.2 ms to 130 ms in one run, `sync_all` (more work on real Linux) came out faster than `sync_data`, and 1 record per sync was slower than 64. That's the virtual disk, not Linux
+- The Mac's ~3 ms fsync stays the reference until there's a run on real Linux hardware with an NVMe drive (week 6, for group commit)
 
 ## See also
 
