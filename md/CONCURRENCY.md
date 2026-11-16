@@ -1,6 +1,8 @@
 # Concurrency
 
-**Status:** Built in PR 3b (Nov 13). Every rule below is in `src/store.rs` and tested, including a check that breaking rule 3 makes the deadlock test fail.
+**Status:** Built in PR 3b (Nov 13). Every rule below is in `src/store.rs` and tested, including a check that breaking rule 3 makes the deadlock test fail. The compaction thread is designed (Nov 16), built in PR 4d, see [The compaction thread (planned)](#the-compaction-thread-planned).
+
+Diagram: [diagrams/threads-and-locks.drawio](diagrams/threads-and-locks.drawio), two pages: a plain-language overview for non-technical readers, and the technical version of this file.
 
 ## Threads
 
@@ -116,6 +118,72 @@ Every change to the Store's threading must follow these. A review that breaks on
 
 - In every row the locks go WAL -> Manifest -> State, and no row holds two of them while doing I/O or sleeping
 
+## Overview diagram
+
+```
+ THREADS                                        LOCKS (always taken top to bottom)
+
+ caller threads (any number)
+   put / delete ─────────────────────────────►  ┌────────────────────────────────┐
+                                                │ 1. WAL lock                    │  held for a whole put:
+                                                │    WAL writer, next seq        │  append + fsync + insert
+                                                └───────────────┬────────────────┘
+                                                                │ only at a swap
+   put (swap) ───────────────────────────────►  ┌───────────────▼────────────────┐
+                                                │ 2. Manifest lock               │  held during a save
+ flush thread ───────────────────────────────►  │    live files, levels,         │  (a few ms of fsyncs)
+   list new SSTable, drop old WAL segment       │    next file number, last seq  │
+                                                │                                │
+ compaction thread (planned) ────────────────►  │                                │
+   add outputs, remove inputs                   └───────────────┬────────────────┘
+                                                                │
+   put / delete / get ───────────────────────►  ┌───────────────▼────────────────┐
+ flush thread ───────────────────────────────►  │ 3. State lock + Condvar        │  memory only, short:
+   take frozen memtable, install SSTable        │    active memtable,            │  insert, lookup,
+ compaction thread (planned) ────────────────►  │    frozen queue,               │  swap lists,
+   pick inputs, swap the SSTable lists          │    SSTables by level           │  never file I/O
+                                                └────────────────────────────────┘
+
+ no lock held: writing SSTables, reading SSTables, reading frozen memtables, deleting files
+
+ waits (all on the one Condvar, which releases State while asleep):
+   put               waits for a free frozen slot       woken by the flush thread
+   flush thread      waits for a frozen memtable        woken by a put that swapped
+   compaction thread waits for "L0 or a level too big"  woken by the flush thread, and by itself
+```
+
+## The compaction thread (planned)
+
+Designed Nov 16, built in PR 4d. Compaction itself (levels, merge, output splitting) is in [COMPACTION.md](COMPACTION.md).
+
+- Its own thread, not the flush thread: a long compaction on the flush thread would block flushes, fill the frozen queue, and stall puts
+- Locks it takes: State (pick inputs, swap the SSTable lists) and Manifest (add outputs, remove inputs, save). Never WAL
+
+| Step | Lock |
+|---|---|
+| Pick inputs: L0 has 4+ files, or a level is over its size target | State |
+| Merge inputs, write + fsync output SSTables, open them | None |
+| Change a copy of the manifest (outputs in, inputs out), save, keep it | Manifest |
+| Swap the SSTable lists, `notify_all` | State |
+| Delete the input files | None. A get still reading one holds its `Arc`, and an unlinked open file stays readable on Linux and macOS |
+
+New rules, added when PR 4d is built:
+
+11. **The compaction thread never takes the WAL lock.** Same reason as rule 2: a put waiting for queue space holds WAL, so nothing it waits on may need WAL
+12. **Nobody waits for the compaction thread.** Puts and the flush thread never wait on it, so a slow compaction can't stall writes. If an L0 stall (too many L0 files) is added later, it's a wait on State like the queue wait, and gets rules 3, 6, 7
+13. **L0 -> L1 never takes an L0 file newer than the oldest frozen memtable still waiting to flush, and always takes every older L0 file that overlaps it.** Otherwise a retried, older memtable could land in L0 after newer data moved to L1, and a get (L0 before L1) would return the older value
+
+How long rule 13 can hold compaction back:
+
+| | Worst case |
+|---|---|
+| With `max_frozen = 1` (default) | Never: nothing can flush ahead of a failed memtable |
+| L0 files held back | `max_frozen - 1` |
+| For how long | One retry window, ~0.7 s (100 + 200 + 400 ms), then it flushes or the store is marked failed |
+| Other compactions (L1 -> L2 and deeper) | Not affected |
+
+- Failures don't add up: each frozen memtable is resolved (flushed, or the store fails) within `max_attempts`, before a later failure can stack on it
+
 ## How it's built
 
 - `Store { inner: Arc<Inner>, flush_thread: Mutex<Option<JoinHandle>> }`. The flush thread gets its own `Arc<Inner>`
@@ -154,4 +222,4 @@ In `src/store/tests.rs`. Everything that could hang runs under `within(seconds, 
 
 ## See also
 
-[FLUSH.md](FLUSH.md) · [MANIFEST.md](MANIFEST.md) · [STORE.md](STORE.md)
+[FLUSH.md](FLUSH.md) · [MANIFEST.md](MANIFEST.md) · [STORE.md](STORE.md) · [COMPACTION.md](COMPACTION.md)

@@ -7,6 +7,22 @@ pub struct Record {
     pub(crate) op: Op,
 }
 
+// read-only from outside the crate: anyone can read a record, only the store makes one,
+// so seqs always come from the store
+impl Record {
+    pub fn seq(&self) -> u64 {
+        self.seq
+    }
+
+    pub fn key(&self) -> &[u8] {
+        &self.key
+    }
+
+    pub fn op(&self) -> &Op {
+        &self.op
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum Op {
     Put { value: Vec<u8> },

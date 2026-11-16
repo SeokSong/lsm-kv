@@ -114,7 +114,28 @@ impl SstReader {
             reader: self,
             next_block: 0,
             current: Vec::new().into_iter(),
-            failed: false,
+            start: None,
+            end: None,
+            done: false,
+        }
+    }
+
+    // entries with keys in [start, end): start inclusive, end exclusive, same as Memtable::range.
+    // the index finds the first block that can hold start, so blocks before it are never read
+    pub fn range(&self, start: &[u8], end: &[u8]) -> SstIter<'_> {
+        // end <= start is an empty range, not an error
+        let done: bool = end <= start;
+        // first block whose last key is >= start. every earlier block only has smaller keys
+        let next_block: usize = self
+            .index
+            .partition_point(|entry| entry.last_key.as_slice() < start);
+        SstIter {
+            reader: self,
+            next_block,
+            current: Vec::new().into_iter(),
+            start: Some(start.to_vec()),
+            end: Some(end.to_vec()),
+            done,
         }
     }
 
@@ -140,27 +161,46 @@ pub struct SstIter<'a> {
     reader: &'a SstReader,
     next_block: usize,
     current: IntoIter<Record>,
-    // after an error the iterator stops instead of skipping the bad block
-    failed: bool,
+    // keys below start are skipped. only the first block read can hold any, so it's
+    // cleared after that block
+    start: Option<Vec<u8>>,
+    // the iterator stops at the first key >= end
+    end: Option<Vec<u8>>,
+    // past the end, or after an error: the iterator stops instead of skipping the bad block
+    done: bool,
 }
 
 impl Iterator for SstIter<'_> {
     type Item = Result<Record, SstError>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.failed {
+        if self.done {
             return None;
         }
         loop {
             if let Some(entry) = self.current.next() {
+                if let Some(end) = &self.end
+                    && entry.key.as_slice() >= end.as_slice()
+                {
+                    self.done = true;
+                    return None;
+                }
                 return Some(Ok(entry));
             }
-            let index_entry: &IndexEntry = self.reader.index.get(self.next_block)?;
+            let Some(index_entry) = self.reader.index.get(self.next_block) else {
+                self.done = true;
+                return None;
+            };
             self.next_block += 1;
             match self.reader.read_block_entries(index_entry) {
-                Ok(entries) => self.current = entries.into_iter(),
+                Ok(mut entries) => {
+                    if let Some(start) = self.start.take() {
+                        entries.retain(|entry| entry.key >= start);
+                    }
+                    self.current = entries.into_iter();
+                }
                 Err(error) => {
-                    self.failed = true;
+                    self.done = true;
                     return Some(Err(error));
                 }
             }
