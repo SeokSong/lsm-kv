@@ -7,6 +7,8 @@ This can be extended to personal sims as well allowing users to track and visual
 This will alos be pairs with a follow up c++ query service that will query the data written from the LSM and drivers and see their past telemetry and compare against friends and compeitoris (whoever is willing to share data)  
 
 
+Product decided Nov 16: a Windows app with lsm-kv embedded, the user's iRacing laps, real F1 laps fetched on demand, friends share by file. No server. See [PRODUCT.md](PRODUCT.md).
+
 ## What it is
 
 <!-- One or two sentences: what lsm-kv is and what problem it solves. -->
@@ -24,6 +26,12 @@ Discord LSM based ScyllaDB with storage facing rust services  here: https://disc
 ## Data
 
 <!-- Where the data comes from and how it reaches the store. -->
+Current sources (Nov 16):
+- Real F1: OpenF1, 2023 and later, free and no login. FastF1 needs a paid F1TV plan since Oct 2026, so it's out
+- My driving: iRacing `.ibt` files, 60 Hz, read on the user's PC. See [IBT.md](IBT.md)
+- Friends: session files they export and send
+
+Original plan (the replay idea still applies to benchmarks, with OpenF1 instead of FastF1):
 1. FastF1 data extracted through python scripts
 2. Use replay to read exported Parquet files sorted by SessionTime.
     2_1. Emit each sample when its timestampe comes due by sleeping for a gap btween consective samples
@@ -64,6 +72,8 @@ The user can request the live feed but for now that is out of scope
 | SSTable | Immutable sorted file on disk: data blocks, index, bloom filter, footer | Done: writer + reader, prefix compression, block CRCs, tmp + rename, `range` (41 tests). Used by the Store for flush and reads | [SSTABLE.md](SSTABLE.md) |
 | Bloom filter | Per-SSTable bit array that says "definitely not here" to skip disk reads | Done: 6 bits/key, stable hash, own CRC | [BLOOM_FILTER.md](BLOOM_FILTER.md) |
 | Flush | Writes a full memtable to a new SSTable | Done: four steps on a background thread, retries with growing wait, backpressure, crash tested at each step | [FLUSH.md](FLUSH.md) |
+| Product | Windows app, lsm-kv embedded, iRacing + OpenF1 data, sharing by file | Decided (Nov 16) | [PRODUCT.md](PRODUCT.md) |
+| .ibt reader | Reads iRacing telemetry files, keeps only the user's car | Format checked on 4 real files, Rust reader next | [IBT.md](IBT.md) |
 | Merge iterator | Reads memtables + SSTables as one sorted stream, newest seq per key, checks its inputs are sorted | Done (PR 4b): heap merge, data contract checks, benchmark (11 tests) | [MERGE.md](MERGE.md) |
 | Compaction | Merges SSTables, keeps the newest version of each key | Designed (Nov 16): leveled, output split by namespace + session, own thread. Core in PR 4c | [COMPACTION.md](COMPACTION.md) |
 | Manifest | List of live SSTables and the current WAL, the source of truth on startup | Done: whole-file rewrite with CRC, tmp + rename, file naming, obsolete files (29 tests). Used by the Store | [MANIFEST.md](MANIFEST.md) |
