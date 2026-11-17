@@ -23,6 +23,27 @@ pub enum StoreError {
     Failed,
     // close was called, the store no longer accepts writes. reads still work
     Closed,
+    // a bulk load was refused. nothing it wrote is left behind or visible
+    Ingest(IngestError),
+}
+
+#[derive(Debug, PartialEq)]
+pub enum IngestError {
+    // keys must strictly increase across the whole ingest
+    OutOfOrder,
+    // commit with nothing added
+    Empty,
+    // existing data (memtable or SSTable) is inside the ingest's key range, e.g. the same
+    // session imported twice. refused instead of mixing two copies
+    Overlaps,
+    // an earlier put on this ingest failed, it can only be dropped now
+    Aborted,
+}
+
+impl From<IngestError> for StoreError {
+    fn from(error: IngestError) -> StoreError {
+        StoreError::Ingest(error)
+    }
 }
 
 impl From<WalError> for StoreError {

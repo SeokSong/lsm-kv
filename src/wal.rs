@@ -4,6 +4,7 @@ mod record;
 mod replay;
 mod writer;
 
+pub use codec::check_sizes;
 pub use codec::decode;
 pub use codec::encode;
 pub use codec::validate;

@@ -52,6 +52,7 @@
     - Raw appends of a 2,030 byte record (2 KB put with the 8-byte seq): write only, write + `sync_data`, write + `sync_all`
     - Group commit preview: 1 / 4 / 16 / 64 records, one `sync_data`
     - `Store::put` end to end, flush threshold raised to 1 GiB so no flush lands in the measurement
+- Bulk load: criterion, `benchmark/ingest.rs`, run with `cargo bench --bench ingest`
 - Merge: criterion, `benchmark/merge.rs`, run with `cargo bench --bench merge`
 - Full SSTable: criterion, `benchmark/sstable.rs`, run with `cargo bench --bench sstable`
     - Fake data with the real shape: 12-byte telemetry keys, 20 cars, 2,000 byte values, filled until the 32 MiB flush threshold like the store does
@@ -234,6 +235,19 @@ Short run (3 s per case), every benchmark in one `cargo bench` run. Mac numbers 
 | Merge them (newest seq per key) | ~10.2 ms | ~3.8 GiB/s |
 
 - The merge adds ~20% over plain reads. A compaction's cost is writing the output (50-160 ms per 32 MiB SSTable with fsync), not merging. Details in [MERGE.md](MERGE.md)
+
+### Bulk load vs puts (2026-11-16, Linux dev container)
+
+`benchmark/ingest.rs`, short run (5 s per case). Fake data shaped like the 2023 Belgian GP, 2,000-byte chunks.
+
+| Case | Entries | Time |
+|---|---|---|
+| Puts, one car's race | 264 | ~80 ms |
+| Bulk load, one car's race | 264 | ~3.2 ms |
+| Bulk load, full race (20 cars) | 5,280 (10.6 MB) | ~15 ms |
+
+- ~25x in the container, more on real disks: puts pay one fsync each, and the container's fsync is unrealistically fast. At the Mac's ~3 ms per fsync a full race through puts is ~16 s
+- Details in [BULK_LOAD.md](BULK_LOAD.md)
 
 ## See also
 

@@ -61,11 +61,11 @@
 
 | Piece | Status |
 |---|---|
-| lsm-kv store | Done for writes, reads, flush. Compaction, bulk load, scan next |
+| lsm-kv store | Done for writes, reads, flush, bulk load ([BULK_LOAD.md](BULK_LOAD.md)). Compaction, scan next |
 | `.ibt` reader | Format checked on 4 real files (`scripts/ibt_inspect.py`), Rust reader next. See [IBT.md](IBT.md) |
 | Lap processing | Split laps / sectors, distance grid, best laps, sector times. Not started |
 | OpenF1 fetch + cache | Not started. Spa 2023 is session_key 9141 |
-| Export / import | Not started, after bulk load |
+| Export / import | Import side done (bulk load), export next |
 | Windows support | Not started |
 | UI (Tauri, uPlot) | Not started. Screens modelled on VRS / Coach Dave Delta: map with both lines, delta trace, stacked channels, shared cursor, sector table |
 | Live collection (iRacing SDK shared memory) | Later |

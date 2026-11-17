@@ -39,6 +39,8 @@
 | `sstable.block_size_bytes` | 16,384 (16 KiB) | Soft target: a block is closed once it reaches this, a bigger value gets a block to itself |
 | `sstable.restart_interval` | 16 | Every Nth entry in a block stores its full key (prefix compression restart point) |
 | `sstable.bloom_bits_per_key` | 6 | Bloom filter bits per key, ~5-6% false positives. 10 is ~1%. 0 turns the filter off |
+| `sstable.target_file_bytes` | 33,554,432 (32 MiB) | Bulk load starts a new file once one reaches this many key + value bytes. Compaction will use it too |
+| `sstable.split_prefix_len` | 5 | Bulk load starts a new file whenever the first N key bytes change. 5 = namespace + session, so each session gets its own files. 0 turns it off |
 | `flush.max_attempts` | 3 | Tries per frozen memtable before the store is marked failed (reads keep working) |
 | `flush.retry_backoff_ms` | 100 | Wait before the 2nd try, doubles after each failure: 100, 200, 400 ms |
 
@@ -52,7 +54,7 @@
 - `ConfigError::Invalid { field, reason }`
     - `flush_threshold_bytes` = 0
     - `max_frozen` = 0, the first flush could never start
-    - `sstable.block_size_bytes` = 0, `sstable.restart_interval` = 0
+    - `sstable.block_size_bytes` = 0, `sstable.restart_interval` = 0, `sstable.target_file_bytes` = 0
 
 ## Interface
 

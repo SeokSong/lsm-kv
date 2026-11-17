@@ -43,3 +43,8 @@ harness = false
 name = "merge"
 path = "benchmark/merge.rs"
 harness = false
+
+[[bench]]
+name = "ingest"
+path = "benchmark/ingest.rs"
+harness = false

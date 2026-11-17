@@ -134,3 +134,16 @@ fn zero_flush_attempts_is_rejected() {
         })
     ));
 }
+
+#[test]
+fn zero_target_file_bytes_is_rejected() {
+    let result = Config::from_toml_str("[sstable]\ntarget_file_bytes = 0\n");
+
+    assert!(matches!(
+        result,
+        Err(ConfigError::Invalid {
+            field: "sstable.target_file_bytes",
+            ..
+        })
+    ));
+}

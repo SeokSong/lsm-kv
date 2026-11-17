@@ -21,6 +21,7 @@ fn small_block_config() -> SstableConfig {
         block_size_bytes: 1024,
         restart_interval: 4,
         bloom_bits_per_key: 6,
+        ..SstableConfig::default()
     }
 }
 
