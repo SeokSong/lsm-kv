@@ -1,6 +1,6 @@
 # iRacing .ibt files
 
-**Status:** Format checked on 4 real files (Nov 16) with `scripts/ibt_inspect.py`. Rust reader not started.
+**Status:** Rust reader done (Nov 17): `src/ibt/`, 15 tests (2 on the real files). Lap times match iRacing's to 0.5 ms. Cutting into chunks and importing: next PR.
 
 ## Where they come from
 
@@ -72,18 +72,42 @@ Seeing a faster driver's telemetry would be useful. Where it could come from, an
 - The only clean route is consent: drivers share their own laps on purpose. That fits the file sharing model already
 - Names and ids are personal data in privacy law (GDPR in the EU), which is why they never go into the store
 
-## Tool
+## The reader (`src/ibt/`)
+
+| Part | What |
+|---|---|
+| `file.rs` | `IbtFile::open` / `parse`: header, channels, session info text, rows. Every offset checked, a file cut mid-row keeps its whole rows |
+| `yaml.rs` | The YAML subset iRacing writes. Never fails: lines it can't read are skipped (names aren't quoted, so it isn't always valid YAML). List items at the same indent as their key |
+| `session.rs` | `SessionInfo`: track, track id / length, the user's own car and customer id, iRacing's splits, session id (start time). Reads nothing about other drivers |
+| `laps.rs` | `split_laps`, `sector_times`, `crossing_time` |
+
+Laps, from what the real files show:
+- `Lap` goes up in the same row where LapDistPct wraps from ~1.0 to ~0.0
+- Lap 0 is the out lap from the pit box, the last lap ends when the driver leaves the car
+- Leaving the car writes one glitch row (Lap 0, LapDistPct 0), then the car shows up at the pit box (0.0384 at Spa): rows with a lap number below the highest so far are dropped
+- Complete = starts and ends with a line crossing (the very next row, the fraction wrapping), no reset (a jump of more than 0.02 forward or 0.005 back between rows), no off-track rows. Only complete laps get lap and sector times
+- Lap start = iRacing's own clock (`SessionTime - LapCurrentLapTime`), falling back to the interpolated crossing. Sector lines are interpolated. Details in [TRACKS.md](TRACKS.md)
+
+| Real file | Complete laps | Ours vs iRacing |
+|---|---|---|
+| W13, Spa | 2 (2:45.172, 2:04.773) | Same to 0.1 ms |
+| Mustang GT3, Spa | 3 (2:20.812, 2:19.375, 2:19.161) | Same to 0.1 ms |
+| BMW M4 GT3, Red Bull Ring | 3 | |
+| Ferrari 499P, Daytona | 0 (7 s file) | |
+
+## Tools
 
 - `python3 -I scripts/ibt_inspect.py <file.ibt>`: header, row count, length
 - `--channels`: every channel with type, count, unit, description
 - `--yaml`: the session info
 - `--samples N`: N rows spread over the file, the channels above
-- Check a Rust reader against it
+- `cargo run --example ibt_laps -- data/<file>.ibt`: the Rust reader's view, every lap with sector times by the key sectors and by iRacing's splits
+- `--laps` on the inspector: rows, first / last lap fraction, pit road rows per lap, and every lap change
 
 ## Open questions
 
-- Laps: the first and last lap of a stint are partial (out lap, in lap), mark them so they aren't compared
-- iRacing's Spa has 4 split points (0, 0.313, 0.523, 0.723 lap distance), F1 has 3 sectors. Use iRacing's for iRacing laps, map to F1 sectors when comparing against F1
+- Laps: done, partial laps are marked incomplete
+- Sectors: decided, official F1 lines in the keys, iRacing's computed too. See [TRACKS.md](TRACKS.md)
 - `TrackNumTurns` is 19 in the W13 file and 21 in the Mustang file for the same track: don't rely on it
 
 ## See also

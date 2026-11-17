@@ -164,7 +164,7 @@ get / scan ◄── active memtable, frozen memtables, SSTables (newest max_seq
 | session_id | OpenF1 `session_key` (Spa 2023 race: 9141). Unique, not increasing over time | Session start from the `.ibt` header, Unix seconds. Unique per driver, sorts a driver's sessions by date |
 | car_idx / driver_id | Driver number (2 B) | iRacing customer id of the user's own car (4 B). Same person on any PC, only shared when the user exports a session |
 | lap | Lap number | `Lap` channel |
-| sector | 1-3 | 1-N from iRacing's split points (Spa: 4) |
+| sector | 1-3, official F1 sectors | Official F1 sectors on F1 tracks, iRacing's split points elsewhere ([TRACKS.md](TRACKS.md)) |
 | seq / chunk | Chunk number inside the sector, from 0 | Same |
 
 - seq vs chunk: the last field numbers the chunks of one sector. It's called `chunk` in the sim keys so it isn't confused with the store's sequence numbers. Same meaning in the F1 keys
@@ -414,6 +414,8 @@ Cassandra - Because our use case has 1 node 1 writer we do not need this
 | Callers write SSTables for bulk load | The store writes them | Every imported entry gets checked, the store controls seqs |
 | A fixed `schema_id` per value | A column list in each chunk | Any car / source can add channels without a new schema |
 | One chunk per sector | At most 512 rows per chunk | An iRacing sector at 60 Hz is over the 64 KB value limit |
+| Each source keyed by its own sectors, or segments cut at every source's lines | Official F1 sectors in keys, other line sets computed | "Sector 2" must be the same stretch everywhere, and keys mustn't change when a source's lines change ([TRACKS.md](TRACKS.md)) |
+| Lap times from the interpolated crossing at LapDistPct = 1 | iRacing's own lap clock | iRacing's timing line is ~0.5 m before that point: a few ms off |
 | Resampling at ingest | Raw samples | Nothing lost, the comparison grid can change later |
 | A random id per install for sim keys | iRacing customer id | Same person on any PC, friends recognise each other |
 
@@ -421,5 +423,5 @@ Cassandra - Because our use case has 1 node 1 writer we do not need this
 - Sim key order (session before driver) and session id (start time in Unix seconds): chosen so each session gets its own files. Two of a driver's sessions can't start in the same second, but double check against real `.ibt` files
 - Session metadata values (0x03, 0x07): track id, track name, car, date, source, out / in lap flags. Format decided with the ingest PR
 - OpenF1 lap distance is computed from speed and time, and drifts. Correct it per lap with the official lap length
-- Track identity across sources: iRacing `TrackID` vs OpenF1 `circuit_key`, and lap lengths differ (iRacing Spa 6.929 km). Laps line up by `lap_dist_pct`
+- Track identity across sources: the track table (`tracks/tracks.toml`) maps iRacing `TrackID` to OpenF1 `circuit_key`. Lap lengths differ (iRacing Spa 6.929 km), laps line up by `lap_dist_pct`. Whether the measured F1 sector lines carry a bias: [TRACKS.md](TRACKS.md)
 - Recovery time goal (50 ms): measure in week 5

@@ -1,0 +1,22 @@
+# tracks we can compare across sources. a session's sectors come from here:
+# - an F1 track: the official F1 sector lines, for every source (iRacing, OpenF1)
+# - any other track: iRacing's own split points from the .ibt file
+# lines are where sector 2, 3, ... start, as a fraction of the lap (lap_dist_pct).
+#
+# F1 lines are measured from OpenF1 timing with scripts/openf1_sector_lines.py: where the car
+# was when each official sector time ended, median over many laps. they still carry a possible
+# bias from OpenF1's position timestamps, to be checked by matching track shapes (md/TRACKS.md)
+
+[[track]]
+name = "Circuit de Spa-Francorchamps, Grand Prix"
+iracing_track_ids = [523]
+openf1_circuit_key = 7
+# 2023 Belgian GP, session 9141, drivers 1 16 44, 125 laps, p10-p90 within +-0.001
+f1_sector_lines = [0.3231, 0.7244]
+
+[[track]]
+name = "Red Bull Ring, Grand Prix"
+iracing_track_ids = [403]
+openf1_circuit_key = 19
+# 2023 Austrian GP, session 9118, drivers 1 16 44, 203 laps, p10-p90 within +-0.002
+f1_sector_lines = [0.2826, 0.6750]
