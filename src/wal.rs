@@ -4,6 +4,7 @@ mod record;
 mod replay;
 mod writer;
 
+pub use codec::MAX_VALUE_LEN;
 pub use codec::check_sizes;
 pub use codec::decode;
 pub use codec::encode;

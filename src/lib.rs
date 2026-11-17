@@ -1,3 +1,4 @@
+pub mod chunk;
 pub mod config;
 mod fs_util;
 pub mod manifest;
