@@ -88,6 +88,7 @@ Newest first, the first `Found` or `Deleted` wins:
 | `SstSizeMismatch { file_number, expected, actual }` | A live SSTable isn't the size the manifest says |
 | `Failed` | A flush, manifest save, or WAL write failed earlier, writes are refused (reads still work). Also a poisoned lock |
 | `Closed` | `close` was called, writes are refused (reads still work) |
+| `Ingest(IngestError)` | A bulk load was refused: `OutOfOrder`, `Empty`, `Overlaps`, `Aborted`. Nothing it wrote is left |
 
 - `open` takes an already parsed `Config`, so config errors never reach the store
 
@@ -98,7 +99,8 @@ Newest first, the first `Found` or `Deleted` wins:
 - `delete(&self, key: Vec<u8>) -> Result<(), StoreError>`
 - `get(&self, key: &[u8]) -> Result<Option<Vec<u8>>, StoreError>`
 - `close(&self) -> Result<(), StoreError>`: stop writes, finish queued flushes, join the flush thread, return the flush error that failed the store. Safe to call twice. `Drop` calls it too (errors dropped)
-- `stats(&self) -> StoreStats { stalls, stall_time, flushes, failed_flush_attempts }`
+- `stats(&self) -> StoreStats { stalls, stall_time, flushes, failed_flush_attempts, ingests }`
+- `begin_ingest(&self) -> Result<Ingest, StoreError>`, then `Ingest::put(key, value)` and `Ingest::commit() -> IngestInfo`: bulk load, see [BULK_LOAD.md](BULK_LOAD.md)
 - `last_seq(&self) -> u64`: seq of the newest write, 0 before the first one
 - `sstable_count(&self) -> usize`, `dir(&self) -> &Path`
 - For tests only: open without a flush thread, swap by hand, run a flush up to any `FlushStep`, pause the flush thread, make the next N flushes fail

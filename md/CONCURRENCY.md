@@ -115,6 +115,7 @@ Every change to the Store's threading must follow these. A review that breaks on
 | flush thread, one memtable | State (oldest frozen `Arc` that isn't waiting out a retry) -> unlock -> Manifest (new file number) -> unlock -> write + open SSTable, no lock -> Manifest (change a copy, save, keep it) -> unlock -> delete segment, no lock -> State (swap in reader, `notify_all`) -> unlock |
 | flush fails | State (count the attempt, set its retry time) -> unlock. Nothing ready: condvar `wait_timeout` until the first retry is due, State released while waiting. After max attempts, or any manifest save failure: State (failed = true, `notify_all`) |
 | close | State (closing = true, `notify_all`) -> unlock -> join flush thread, no lock |
+| bulk load ([BULK_LOAD.md](BULK_LOAD.md)) | begin: WAL (reserve a seq) -> unlock. put: no lock (Manifest for a moment per new file number). commit: write + open files, no lock -> WAL, held to the end -> State (overlap check) -> unlock -> Manifest (change a copy, save) -> unlock -> State (insert files, `notify_all`) -> unlock -> unlock WAL |
 
 - In every row the locks go WAL -> Manifest -> State, and no row holds two of them while doing I/O or sleeping
 

@@ -1,4 +1,5 @@
 mod error;
+mod ingest;
 
 use std::collections::VecDeque;
 use std::fs;
@@ -17,7 +18,8 @@ use crate::memtable::{Lookup, Memtable};
 use crate::sstable::{SstInfo, SstLookup, SstReader, SstWriter};
 use crate::wal::{self, Op, Record, WalError, WalWriter};
 
-pub use error::StoreError;
+pub use error::{IngestError, StoreError};
+pub use ingest::{Ingest, IngestInfo};
 
 // the single WAL file from before segments. a directory with one of these and no
 // manifest isn't a new store
@@ -113,6 +115,7 @@ struct Stats {
     stall_nanos: AtomicU64,
     flushes: AtomicU64,
     failed_flush_attempts: AtomicU64,
+    ingests: AtomicU64,
 }
 
 // counters for benchmarks: how often puts waited on a full frozen queue, and for how long
@@ -122,6 +125,8 @@ pub struct StoreStats {
     pub stall_time: Duration,
     pub flushes: u64,
     pub failed_flush_attempts: u64,
+    // committed bulk loads
+    pub ingests: u64,
 }
 
 impl Store {
@@ -354,6 +359,7 @@ impl Store {
             stall_time: Duration::from_nanos(stats.stall_nanos.load(Ordering::Relaxed)),
             flushes: stats.flushes.load(Ordering::Relaxed),
             failed_flush_attempts: stats.failed_flush_attempts.load(Ordering::Relaxed),
+            ingests: stats.ingests.load(Ordering::Relaxed),
         }
     }
 

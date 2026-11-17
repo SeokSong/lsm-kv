@@ -40,6 +40,11 @@ pub struct SstableConfig {
     pub restart_interval: usize,
     // bloom filter bits per key, 0 turns the filter off
     pub bloom_bits_per_key: usize,
+    // bulk load (later compaction too) starts a new file once one reaches this many key + value bytes
+    pub target_file_bytes: usize,
+    // bulk load starts a new file whenever the first this-many key bytes change. 5 is
+    // namespace + session, so each session gets its own files. 0 turns it off
+    pub split_prefix_len: usize,
 }
 
 impl Default for SstableConfig {
@@ -48,6 +53,8 @@ impl Default for SstableConfig {
             block_size_bytes: 16 * 1024,
             restart_interval: 16,
             bloom_bits_per_key: 6,
+            target_file_bytes: 32 * 1024 * 1024,
+            split_prefix_len: 5,
         }
     }
 }
@@ -129,6 +136,12 @@ impl Config {
             return Err(ConfigError::Invalid {
                 field: "sstable.restart_interval",
                 reason: "must be at least 1",
+            });
+        }
+        if self.sstable.target_file_bytes == 0 {
+            return Err(ConfigError::Invalid {
+                field: "sstable.target_file_bytes",
+                reason: "must be greater than 0",
             });
         }
         // 0 tries would mark the store failed before a flush ever ran

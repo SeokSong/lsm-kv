@@ -87,6 +87,8 @@
 
 ## Bulk load (PR 4e)
 
+- Built Nov 16, before compaction: see [BULK_LOAD.md](BULK_LOAD.md). Ingested files join the normal SSTable list until levels exist, then go to the bottom level
+
 - Historical sessions are complete before ingest, so they can skip the WAL, memtable, L0, and compaction (RocksDB: `SstFileWriter` + `IngestExternalFile`)
     1. Sort the session outside the store (~13 MB per race, fits in memory)
     2. Write SSTables with `SstWriter`, split by namespace + session like flush

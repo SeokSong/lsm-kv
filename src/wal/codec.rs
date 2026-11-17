@@ -14,7 +14,15 @@ const HEADER_LEN: usize = 4 + 8 + 1 + 1 + 4;
 // checks the key and value fit the record format, without encoding anything.
 // the store runs this before a memtable swap so a rejected put can't trigger a flush
 pub fn validate(record: &Record) -> Result<(), WalError> {
-    let key_len = record.key.len();
+    let value_len: usize = match record.op {
+        Op::Put { ref value } => value.len(),
+        Op::Delete => TOMBSTONE_VALUE_LEN,
+    };
+    check_sizes(record.key.len(), value_len)
+}
+
+// the same limits without a Record: bulk load checks each entry against what a put could write
+pub fn check_sizes(key_len: usize, value_len: usize) -> Result<(), WalError> {
     if key_len > MAX_KEY_LEN {
         return Err(WalError::Size {
             incorrect_size: key_len,
@@ -22,11 +30,9 @@ pub fn validate(record: &Record) -> Result<(), WalError> {
             which_field: SizeField::Key,
         });
     }
-    if let Op::Put { ref value } = record.op
-        && value.len() > MAX_VALUE_LEN
-    {
+    if value_len > MAX_VALUE_LEN {
         return Err(WalError::Size {
-            incorrect_size: value.len(),
+            incorrect_size: value_len,
             correct_max_size: MAX_VALUE_LEN,
             which_field: SizeField::Value,
         });
