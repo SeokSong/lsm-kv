@@ -2,7 +2,8 @@ use super::error::{CorruptionReason, SizeField, WalError};
 use super::record::{Op, Record};
 
 const MAX_KEY_LEN: usize = 16;
-const MAX_VALUE_LEN: usize = 65_536;
+// public so value formats (column chunks) can size themselves to fit
+pub const MAX_VALUE_LEN: usize = 65_536;
 const TOMBSTONE_VALUE_LEN: usize = 0;
 const _: () = assert!(MAX_KEY_LEN <= u8::MAX as usize);
 const _: () = assert!(MAX_VALUE_LEN <= u32::MAX as usize);

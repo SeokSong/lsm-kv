@@ -191,6 +191,8 @@ This also gives us flexability as if we want to construct everything from T1 to 
 
 ### Value format (column chunks), decided Nov 16
 
+- Built Nov 17: `src/chunk.rs`, see [CHUNK.md](CHUNK.md)
+
 - Value Format: Little Endian
     - Live view reads from forwarder directly and store is durable record
     - SOA

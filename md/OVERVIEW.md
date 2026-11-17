@@ -74,6 +74,7 @@ The user can request the live feed but for now that is out of scope
 | Flush | Writes a full memtable to a new SSTable | Done: four steps on a background thread, retries with growing wait, backpressure, crash tested at each step | [FLUSH.md](FLUSH.md) |
 | Product | Windows app, lsm-kv embedded, iRacing + OpenF1 data, sharing by file | Decided (Nov 16) | [PRODUCT.md](PRODUCT.md) |
 | .ibt reader | Reads iRacing telemetry files, keeps only the user's car | Format checked on 4 real files, Rust reader next | [IBT.md](IBT.md) |
+| Column chunks | The value format: samples as columns, self describing, channel catalog | Done (Nov 17): 15 tests | [CHUNK.md](CHUNK.md) |
 | Bulk load | Loads a finished session straight into SSTables, one seq, all or nothing, refuses overlaps | Done (PR 4e): 19 tests, ~25x faster than puts in the container | [BULK_LOAD.md](BULK_LOAD.md) |
 | Merge iterator | Reads memtables + SSTables as one sorted stream, newest seq per key, checks its inputs are sorted | Done (PR 4b): heap merge, data contract checks, benchmark (11 tests) | [MERGE.md](MERGE.md) |
 | Compaction | Merges SSTables, keeps the newest version of each key | Designed (Nov 16): leveled, output split by namespace + session, own thread. Core in PR 4c | [COMPACTION.md](COMPACTION.md) |
@@ -106,7 +107,8 @@ The user can request the live feed but for now that is out of scope
     - Compaction designed: leveled, split by namespace + session, own thread, bulk load for historical sessions
     - Merge iterator + `SstReader::range` (PR 4b)
     - Bulk load (PR 4e, built before compaction): `begin_ingest` / `put` / `commit`
-    - 200 unit tests, CI on Linux and macOS
+    - Column chunk value format + channel catalog (`src/chunk.rs`)
+    - 215 unit tests, CI on Linux and macOS
     - Benchmarks on Mac: crc32fast is 3-4x faster than crc32c, fsync is ~99.9% of a put (~3 ms, ~350 appends/s), memtable get allocation costs nothing measurable (copy ~0.2 us per 2 KB), a full 32 MiB SSTable flush takes ~40 ms, bloom makes missing-key gets ~9x faster
 - Next
     - PR 4c: compaction core (levels in manifest v2, output splitting, tombstone rules)

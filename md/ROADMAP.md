@@ -30,7 +30,7 @@ If none: it waits. Examples that wait for now: group commit, `Mutex` vs `RwLock`
 
 | Step | What | Doc |
 |---|---|---|
-| 1 | Value encoding: column chunks, the channel catalog (Rust) | [DESIGN.md](DESIGN.md#value-format-column-chunks-decided-nov-16) |
+| 1 | Value encoding: column chunks, the channel catalog (Rust). Done Nov 17 | [CHUNK.md](CHUNK.md) |
 | 2 | `.ibt` reader (Rust): own car only, laps, sectors, chunks of 512 rows | [IBT.md](IBT.md) |
 | 3 | `scan(start, end)` | [MERGE.md](MERGE.md) |
 | 4 | OpenF1 fetch for one race, with a cache cap. Lap distance computed at ingest | [PRODUCT.md](PRODUCT.md) |
