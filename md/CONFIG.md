@@ -11,7 +11,7 @@
 
 | | Examples | Where |
 |---|---|---|
-| Format constants | key/value limits, WAL header layout, type bytes | Code (`src/wal/codec.rs`) |
+| Format constants | key/value limits, WAL header layout, type bytes | Code (`crates/lsm-kv/src/wal/codec.rs`) |
 | Tuning settings | memtable flush threshold, max frozen memtables | `config/*.toml` |
 
 ## Why TOML
@@ -23,9 +23,9 @@
 
 | File | Use |
 |---|---|
-| `config/default.toml` | Defaults, a test checks it matches `Config::default()` in code |
-| `config/memtable-16mb.toml` | Benchmark profile: 16 MiB flush threshold |
-| `config/memtable-64mb.toml` | Benchmark profile: 64 MiB flush threshold |
+| `crates/lsm-kv/config/default.toml` | Defaults, a test checks it matches `Config::default()` in code |
+| `crates/lsm-kv/config/memtable-16mb.toml` | Benchmark profile: 16 MiB flush threshold |
+| `crates/lsm-kv/config/memtable-64mb.toml` | Benchmark profile: 64 MiB flush threshold |
 
 - A profile only lists what it changes, every missing setting keeps its default
 - An empty file is all defaults
@@ -65,9 +65,9 @@
 
 ## Tests
 
-- `src/config/tests.rs`: 12 tests, done
+- `crates/lsm-kv/src/config/tests.rs`: 12 tests, done
     - Default values
-    - `config/default.toml` matches the code defaults
+    - `crates/lsm-kv/config/default.toml` matches the code defaults
     - Profiles only override what they set
     - Empty file is all defaults
     - Unknown setting is rejected

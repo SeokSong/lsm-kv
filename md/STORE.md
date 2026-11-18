@@ -107,7 +107,7 @@ Newest first, the first `Found` or `Deleted` wins:
 
 ## Tests
 
-- `src/store/tests.rs`: 39 tests, done
+- `crates/lsm-kv/src/store/tests.rs`: 39 tests, done
 - Basics: open creates the manifest + first segment, put / get, missing key, delete, overwrite, rejected put changes nothing and uses no seq
 - Recovery: reopen after puts / deletes, after a torn tail, corrupt WAL fails with the offset, seqs continue after reopen, and continue from the manifest when every segment was already flushed
 - Swap: happens before the put that would overflow (memtable never over the threshold), empty memtable takes an oversized put, a rejected put doesn't trigger a flush

@@ -1,12 +1,12 @@
 //! prints an .ibt file's session, laps, and sector times: the official F1 lines (or iRacing's
 //! own on non-F1 tracks) and iRacing's split points, side by side.
 //!
-//! run with: cargo run --example ibt_laps -- data/<file>.ibt [more files]
+//! run with: cargo run -p racedata --example ibt_laps -- crates/racedata/data/<file>.ibt [more files]
 
 use std::path::Path;
 
-use lsm_kv::ibt::{IbtFile, Lap, LapChannels, SessionInfo, sector_times, split_laps};
-use lsm_kv::track::{self, SectorSource};
+use racedata::ibt::{IbtFile, Lap, LapChannels, SessionInfo, sector_times, split_laps};
+use racedata::track::{self, SectorSource};
 
 fn main() {
     for path in std::env::args().skip(1) {
@@ -16,7 +16,7 @@ fn main() {
     }
 }
 
-fn show(path: &Path) -> Result<(), lsm_kv::ibt::IbtError> {
+fn show(path: &Path) -> Result<(), racedata::ibt::IbtError> {
     let file: IbtFile = IbtFile::open(path)?;
     let info: SessionInfo = SessionInfo::read(&file)?;
     let channels: LapChannels = LapChannels::read(&file)?;

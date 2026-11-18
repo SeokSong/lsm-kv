@@ -9,7 +9,7 @@ on:
         description: "seconds criterion measures each benchmark case"
         default: "5"
       bench:
-        description: "one benchmark (crc, memtable_get, fsync, sstable), empty for all"
+        description: "one benchmark (crc, memtable_get, fsync, sstable, merge, ingest), empty for all"
         default: ""
 
 env:
@@ -52,9 +52,9 @@ jobs:
         run: |
           set -o pipefail
           if [ -n "$BENCH" ]; then
-            cargo bench --bench "$BENCH" -- --measurement-time "$MEASUREMENT_TIME" 2>&1 | tee bench.txt
+            cargo bench -p lsm-kv --bench "$BENCH" -- --measurement-time "$MEASUREMENT_TIME" 2>&1 | tee bench.txt
           else
-            cargo bench -- --measurement-time "$MEASUREMENT_TIME" 2>&1 | tee bench.txt
+            cargo bench -p lsm-kv -- --measurement-time "$MEASUREMENT_TIME" 2>&1 | tee bench.txt
           fi
 
       # the time lines only, on the run's summary page

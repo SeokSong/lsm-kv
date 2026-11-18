@@ -1,6 +1,6 @@
 # Merge iterator
 
-**Status:** Done in PR 4b (Nov 16): `src/merge.rs`, 11 tests plus 4 for `SstReader::range`, criterion benchmark. Used by compaction (4c) and scan (week 5).
+**Status:** Done in PR 4b (Nov 16): `crates/lsm-kv/src/merge.rs`, 11 tests plus 4 for `SstReader::range`, criterion benchmark. Used by compaction (4c) and scan (week 5).
 
 ## Purpose
 
@@ -72,18 +72,18 @@ The merge is only right if its inputs follow these. They're checked as it runs, 
 
 ## Tests
 
-- `src/merge/tests.rs` (11)
+- `crates/lsm-kv/src/merge/tests.rs` (11)
     - Newest seq wins whatever source it's in, tombstone hides older values and is yielded
     - No sources, empty sources, sources that don't overlap
     - Memtables and real SSTables mixed, ranges of both
     - Model check: 20 rounds of up to 400 random writes over 1-6 sources (about half become SSTables), compared with a `BTreeMap` that applies every write in seq order
     - Errors: a source error is yielded once then stops, unsorted source, same key twice in one source, same key and seq in two sources. Good entries before the bad one still come out
-- `src/sstable/reader/tests.rs` (4 new): range matches a filtered `iter` for every pair of 24 bounds across many blocks, bounds that aren't keys, before / after the file, empty and backwards ranges, a one-key range with a tombstone
+- `crates/lsm-kv/src/sstable/reader/tests.rs` (4 new): range matches a filtered `iter` for every pair of 24 bounds across many blocks, bounds that aren't keys, before / after the file, empty and backwards ranges, a one-key range with a tombstone
 - Checked that the tests can fail: making the oldest seq win fails 5 merge tests, making `range` ignore `start` fails 3 range tests
 
 ## Benchmark
 
-`benchmark/merge.rs`, `cargo bench --bench merge`. 4 SSTables (~8 MiB each, 20,800 entries, 16,000 distinct keys, every 10th key in all 4), Linux dev container, short run (3 s per case):
+`crates/lsm-kv/benchmark/merge.rs`, `cargo bench --bench merge`. 4 SSTables (~8 MiB each, 20,800 entries, 16,000 distinct keys, every 10th key in all 4), Linux dev container, short run (3 s per case):
 
 | Case | Time | Throughput |
 |---|---|---|

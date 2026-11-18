@@ -8,8 +8,8 @@ cd "$(dirname "$0")/.."
 filter="${1:-}"
 docker compose run --rm -T dev bash -c "
   set -euo pipefail
-  cargo fmt --check
-  cargo clippy --all-targets -- -D warnings
-  cargo test -- $filter
-  cargo bench --no-run
+  cargo fmt --all --check
+  cargo clippy --workspace --all-targets -- -D warnings
+  cargo test --workspace -- $filter
+  cargo bench --workspace --no-run
 " 2>&1 | grep -vE '^ *Container |^ *Compiling |^ *Executable '

@@ -27,15 +27,15 @@ Run from the repo root (`~/dev/lsm-tree-key-value-store/lsm-kv`):
 | Task | Command |
 |---|---|
 | Build the image (first time, after a `Dockerfile` change) | `docker compose build` |
-| Tests | `docker compose run --rm dev cargo test` |
-| Format check | `docker compose run --rm dev cargo fmt --check` |
-| Lint | `docker compose run --rm dev cargo clippy --all-targets -- -D warnings` |
-| All benchmarks | `docker compose run --rm dev cargo bench` |
-| One benchmark, short run | `docker compose run --rm dev cargo bench --bench sstable -- --warm-up-time 1 --measurement-time 3` |
+| Tests (both crates) | `docker compose run --rm dev cargo test`. One crate: `-p lsm-kv` or `-p racedata` |
+| Format check | `docker compose run --rm dev cargo fmt --all --check` |
+| Lint | `docker compose run --rm dev cargo clippy --workspace --all-targets -- -D warnings` |
+| All benchmarks (all in `lsm-kv`) | `docker compose run --rm dev cargo bench -p lsm-kv` |
+| One benchmark, short run | `docker compose run --rm dev cargo bench -p lsm-kv --bench sstable -- --warm-up-time 1 --measurement-time 3` |
 | A shell in the container | `docker compose run --rm dev bash` |
 | Everything CI checks (fmt, clippy, tests, benchmarks build) | `scripts/check.sh`, or `scripts/check.sh merge` for only tests matching `merge` |
-| Laps and sector times of `.ibt` files | `docker compose run --rm dev cargo run --example ibt_laps -- data/<file>.ibt` |
-| Official F1 sector lines of a track | `python3 -I scripts/openf1_sector_lines.py <session> <drivers>` (fetches OpenF1, cached in `data/openf1/`) |
+| Laps and sector times of `.ibt` files | `docker compose run --rm dev cargo run -p racedata --example ibt_laps -- crates/racedata/data/<file>.ibt` |
+| Official F1 sector lines of a track | `python3 -I scripts/openf1_sector_lines.py <session> <drivers>` (fetches OpenF1, cached in `crates/racedata/data/openf1/`) |
 | Run the tests many times to catch flaky (timing dependent) tests | `scripts/repeat-tests.sh 50`, or `scripts/repeat-tests.sh 50 store` for only `store` tests |
 
 - Criterion's HTML reports land in the `target` volume. To keep one, copy it out: `docker compose run --rm dev bash -c "cp -r /target/criterion /workspace/criterion-report"` (not in `.gitignore`, so don't commit it)

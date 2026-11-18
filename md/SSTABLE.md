@@ -134,10 +134,10 @@ block:   | entry | entry | ... | restart offsets 4B each | restart count 4B | CR
 
 ## Tests
 
-- Block (`src/sstable/block/tests.rs`): round trip, seqs survive (0 and u64::MAX), prefix compression shrinks the block, get every key for restart intervals 1 / 2 / 3 / 16 / 100, missing keys, bit flips fail the CRC, every truncation is an error not a panic, bad entry with a valid CRC, builder resets between blocks
-- Bloom (`src/sstable/bloom/tests.rs`): pinned hash values, no false negatives, false positive rate at 6 and 10 bits/key, k per bits/key, encode/decode, CRC, every truncation
-- Index + footer (`src/sstable/index/tests.rs`): round trip, find block by last key, CRC, every truncation, footer is 22 bytes, bad magic / version, sections must fit before the footer
-- SSTable (`src/sstable/reader/tests.rs`): write a memtable then get every key (values and tombstones), missing keys, iter matches the memtable (seqs included), first / last key and min / max seq, 64 KiB value bigger than a block, no bloom filter, bloom skips most missing keys, out of order and duplicate keys rejected, empty SSTable leaves no files, file only appears after finish, corrupt block reports its offset, bad magic, every truncation of a whole file fails open, random bytes fail open, `range` matches a filtered `iter` for every pair of 24 bounds, bounds that aren't keys, empty and backwards ranges, one-key range with a tombstone
+- Block (`crates/lsm-kv/src/sstable/block/tests.rs`): round trip, seqs survive (0 and u64::MAX), prefix compression shrinks the block, get every key for restart intervals 1 / 2 / 3 / 16 / 100, missing keys, bit flips fail the CRC, every truncation is an error not a panic, bad entry with a valid CRC, builder resets between blocks
+- Bloom (`crates/lsm-kv/src/sstable/bloom/tests.rs`): pinned hash values, no false negatives, false positive rate at 6 and 10 bits/key, k per bits/key, encode/decode, CRC, every truncation
+- Index + footer (`crates/lsm-kv/src/sstable/index/tests.rs`): round trip, find block by last key, CRC, every truncation, footer is 22 bytes, bad magic / version, sections must fit before the footer
+- SSTable (`crates/lsm-kv/src/sstable/reader/tests.rs`): write a memtable then get every key (values and tombstones), missing keys, iter matches the memtable (seqs included), first / last key and min / max seq, 64 KiB value bigger than a block, no bloom filter, bloom skips most missing keys, out of order and duplicate keys rejected, empty SSTable leaves no files, file only appears after finish, corrupt block reports its offset, bad magic, every truncation of a whole file fails open, random bytes fail open, `range` matches a filtered `iter` for every pair of 24 bounds, bounds that aren't keys, empty and backwards ranges, one-key range with a tombstone
 
 ## Open questions
 

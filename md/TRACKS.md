@@ -1,6 +1,6 @@
 # Tracks and sectors
 
-**Status:** Decided and built Nov 17: `tracks/tracks.toml` (Spa, Red Bull Ring), `src/track.rs`, 4 tests.
+**Status:** Decided and built Nov 17: `crates/racedata/tracks/tracks.toml` (Spa, Red Bull Ring), `crates/racedata/src/track.rs`, 4 tests.
 
 ## The problem
 
@@ -29,7 +29,7 @@ Sector-to-sector comparison only works if "sector 2" is the same stretch of trac
 
 ## The track table
 
-`tracks/tracks.toml`, built into the program (`include_str!`). Adding a track needs no code change.
+`crates/racedata/tracks/tracks.toml`, built into the program (`include_str!`). Adding a track needs no code change.
 
 | Field | |
 |---|---|

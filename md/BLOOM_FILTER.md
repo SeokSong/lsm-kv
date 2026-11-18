@@ -39,7 +39,7 @@
     - h2 is forced odd so every probe lands on a different bit
 - The hash must never change: the bits are saved on disk
     - std's `DefaultHasher` doesn't promise that across Rust versions
-    - Uses FNV-1a 64 then a splitmix64 finish to mix the bits, written out in `src/sstable/bloom.rs`
+    - Uses FNV-1a 64 then a splitmix64 finish to mix the bits, written out in `crates/lsm-kv/src/sstable/bloom.rs`
     - A test pins three hash values (computed separately) so a change can't slip in
 
 ## On-disk format
@@ -67,8 +67,8 @@
 ## Tests
 
 <!-- How will you measure the real false-positive rate? -->
-- `src/sstable/bloom/tests.rs`: pinned hash values, no false negatives over 10,000 keys, false positive rate at 6 and 10 bits/key over 20,000 missing keys, k per bits/key, encode/decode round trip, bit flip fails the CRC, every truncation is an error
-- `src/sstable/reader/tests.rs`: bloom skips most missing keys in a real SSTable, SSTable without a filter still works
+- `crates/lsm-kv/src/sstable/bloom/tests.rs`: pinned hash values, no false negatives over 10,000 keys, false positive rate at 6 and 10 bits/key over 20,000 missing keys, k per bits/key, encode/decode round trip, bit flip fails the CRC, every truncation is an error
+- `crates/lsm-kv/src/sstable/reader/tests.rs`: bloom skips most missing keys in a real SSTable, SSTable without a filter still works
 
 ## Open questions
 

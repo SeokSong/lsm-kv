@@ -10,7 +10,7 @@
 mod catalog;
 mod error;
 
-use crate::wal::MAX_VALUE_LEN;
+use lsm_kv::wal::MAX_VALUE_LEN;
 
 pub use catalog::{
     ALT, BRAKE, CATALOG, Channel, ColumnType, DRS, GEAR, LAP_DIST, LAP_DIST_PCT, LAT, LON, RPM,

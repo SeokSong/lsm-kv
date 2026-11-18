@@ -1,50 +1,22 @@
-[package]
-name = "lsm-kv"
+# workspace: the database and the race data library on top of it (md/OVERVIEW.md)
+#   crates/lsm-kv    the store: WAL, memtables, SSTables, manifest, merge, bulk load
+#   crates/racedata  sources (.ibt, OpenF1), laps and sectors, column chunks, keys, import
+[workspace]
+members = ["crates/lsm-kv", "crates/racedata"]
+# a virtual workspace has no edition to infer the resolver from, so it's set here
+resolver = "3"
+
+[workspace.package]
 version = "0.1.0"
 edition = "2024"
 
-# criterion runs the benchmarks, the lib has none. without this, cargo bench passes
-# criterion flags (--warm-up-time) to the lib's test harness, which rejects them
-[lib]
-bench = false
-
-[dependencies]
+# versions live here once. each crate still lists only what it uses ({ workspace = true })
+[workspace.dependencies]
+lsm-kv = { path = "crates/lsm-kv" }
 crc32fast = "1.5.5"
 serde = { version = "1.0.229", features = ["derive"] }
 toml = "1.2.1"
-
-[dev-dependencies]
-# only benchmark/crc.rs uses it, to compare against crc32fast
+# dev
 crc32c = "0.6.9"
 criterion = "0.8.2"
 tempfile = "3.27.0"
-
-[[bench]]
-name = "crc"
-path = "benchmark/crc.rs"
-harness = false
-
-[[bench]]
-name = "memtable_get"
-path = "benchmark/memtable_get.rs"
-harness = false
-
-[[bench]]
-name = "fsync"
-path = "benchmark/fsync.rs"
-harness = false
-
-[[bench]]
-name = "sstable"
-path = "benchmark/sstable.rs"
-harness = false
-
-[[bench]]
-name = "merge"
-path = "benchmark/merge.rs"
-harness = false
-
-[[bench]]
-name = "ingest"
-path = "benchmark/ingest.rs"
-harness = false

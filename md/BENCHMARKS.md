@@ -46,15 +46,15 @@
     - Results: the run's summary page, and a zip (`bench.txt`, `machine.txt`, criterion HTML report) kept 90 days. `gh run download <run id>`
     - Free for a public repo
 - `--release` builds
-- CRC: criterion 0.8.2, `benchmark/crc.rs`, run with `cargo bench --bench crc`
-- Memtable get: criterion, `benchmark/memtable_get.rs`, run with `cargo bench --bench memtable_get`
-- fsync: criterion, `benchmark/fsync.rs`, run with `cargo bench --bench fsync`
+- CRC: criterion 0.8.2, `crates/lsm-kv/benchmark/crc.rs`, run with `cargo bench --bench crc`
+- Memtable get: criterion, `crates/lsm-kv/benchmark/memtable_get.rs`, run with `cargo bench --bench memtable_get`
+- fsync: criterion, `crates/lsm-kv/benchmark/fsync.rs`, run with `cargo bench --bench fsync`
     - Raw appends of a 2,030 byte record (2 KB put with the 8-byte seq): write only, write + `sync_data`, write + `sync_all`
     - Group commit preview: 1 / 4 / 16 / 64 records, one `sync_data`
     - `Store::put` end to end, flush threshold raised to 1 GiB so no flush lands in the measurement
-- Bulk load: criterion, `benchmark/ingest.rs`, run with `cargo bench --bench ingest`
-- Merge: criterion, `benchmark/merge.rs`, run with `cargo bench --bench merge`
-- Full SSTable: criterion, `benchmark/sstable.rs`, run with `cargo bench --bench sstable`
+- Bulk load: criterion, `crates/lsm-kv/benchmark/ingest.rs`, run with `cargo bench --bench ingest`
+- Merge: criterion, `crates/lsm-kv/benchmark/merge.rs`, run with `cargo bench --bench merge`
+- Full SSTable: criterion, `crates/lsm-kv/benchmark/sstable.rs`, run with `cargo bench --bench sstable`
     - Fake data with the real shape: 12-byte telemetry keys, 20 cars, 2,000 byte values, filled until the 32 MiB flush threshold like the store does
     - No value compression, so value contents don't change the timings, only their size. F1 data isn't needed here
     - Page cache warm. A cold cache needs Linux (`drop_caches`)
@@ -122,7 +122,7 @@ Short run (3 s per case), rough numbers. 2,030 byte records.
 Question: `Store::get` returns an owned `Vec<u8>` (one ~2 KB copy per read). Is the allocation more expensive than the copy itself?
 
 - 16,384 entries x 2,000 byte values (one full 32 MiB memtable), lookups jump around the map
-- `benchmark/memtable_get.rs`, short run (3 s per case)
+- `crates/lsm-kv/benchmark/memtable_get.rs`, short run (3 s per case)
 
 | Case | Time per get |
 |---|---|
@@ -138,7 +138,7 @@ Question: `Store::get` returns an owned `Vec<u8>` (one ~2 KB copy per read). Is 
 ### SSTable: full 32 MiB flush (2026-11-13, Mac)
 
 - One full memtable: 16,678 telemetry entries x 2,000 byte values, 20 cars, default config (16 KiB blocks, restart interval 16, 6 bloom bits/key)
-- First run: quick timed program outside the repo, page cache warm. Now `benchmark/sstable.rs`, rerun Nov 16 with criterion (short run, 3 s per case)
+- First run: quick timed program outside the repo, page cache warm. Now `crates/lsm-kv/benchmark/sstable.rs`, rerun Nov 16 with criterion (short run, 3 s per case)
 
 | Measurement | Result |
 |---|---|
@@ -227,7 +227,7 @@ Short run (3 s per case), every benchmark in one `cargo bench` run. Mac numbers 
 
 ### Merge iterator (2026-11-16, Linux dev container)
 
-`benchmark/merge.rs`, short run (3 s per case). 4 overlapping SSTables, ~8 MiB each, 42 MB total, 20,800 entries, 16,000 distinct keys.
+`crates/lsm-kv/benchmark/merge.rs`, short run (3 s per case). 4 overlapping SSTables, ~8 MiB each, 42 MB total, 20,800 entries, 16,000 distinct keys.
 
 | Case | Time | Throughput |
 |---|---|---|
@@ -238,7 +238,7 @@ Short run (3 s per case), every benchmark in one `cargo bench` run. Mac numbers 
 
 ### Bulk load vs puts (2026-11-16, Linux dev container)
 
-`benchmark/ingest.rs`, short run (5 s per case). Fake data shaped like the 2023 Belgian GP, 2,000-byte chunks.
+`crates/lsm-kv/benchmark/ingest.rs`, short run (5 s per case). Fake data shaped like the 2023 Belgian GP, 2,000-byte chunks.
 
 | Case | Entries | Time |
 |---|---|---|

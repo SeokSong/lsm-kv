@@ -63,6 +63,18 @@ For the live feed, we will feed it to the WAL.
                                         -> start background Flush job 
 The user can request the live feed but for now that is out of scope
 
+## Code layout
+
+Cargo workspace, two crates (split Nov 18):
+
+| Crate | What's in it | Knows about racing? |
+|---|---|---|
+| `crates/lsm-kv` | The database: WAL, memtables, SSTables, manifest, merge iterator, store, bulk load. Benchmarks, config profiles | No: bytes in, bytes out |
+| `crates/racedata` | Sources (`.ibt`, later OpenF1), laps and sectors, the track table, column chunks, keys, import into the store. Local `.ibt` / OpenF1 files in `data/` (git ignored) | Yes. Depends on `lsm-kv` |
+
+- The UI (not started) sits on top of `racedata`. Its language is still open ([PRODUCT.md](PRODUCT.md))
+- `lsm-kv` never depends on `racedata`
+
 ## Components
 
 | Component | One-line summary | Status | Doc |
@@ -84,7 +96,7 @@ The user can request the live feed but for now that is out of scope
 | Crash recovery | Rebuilds state on startup from the manifest + WAL replay | Done for 3a: manifest, cleanup, SSTables, segment replay, tested at every flush step. kill -9 tests in week 5 | [RECOVERY.md](RECOVERY.md) |
 | Benchmarks | Microbenchmarks now, F1 replay and YCSB-style workloads later | In progress: CRC-32, fsync + group commit + `Store::put`, memtable get, full-size SSTable as criterion benches, run on Mac and in the Linux dev container. Real-hardware Linux fsync still to do | [BENCHMARKS.md](BENCHMARKS.md) |
 | Development | Linux dev container: Docker + VS Code Dev Containers, every cargo command runs in it | Done (Nov 16) | [DEVELOPMENT.md](DEVELOPMENT.md) |
-| Config | Tuning settings in TOML (`config/*.toml`), format constants stay in code | Done for memtable + SSTable settings (11 tests) | [CONFIG.md](CONFIG.md) |
+| Config | Tuning settings in TOML (`crates/lsm-kv/config/*.toml`), format constants stay in code | Done for memtable + SSTable settings (11 tests) | [CONFIG.md](CONFIG.md) |
 | Store | Public API: open (replay), put / delete (WAL then memtable), get | Done for v1 writes + reads: WAL segments, manifest, background flush, get across memtables + SSTables, shareable across threads, close (39 tests). Scan in week 5 | [STORE.md](STORE.md) |
 
 <!-- Status ideas: Not started / Designing / In progress / Done / Tested / Benchmarked -->
@@ -108,15 +120,16 @@ The user can request the live feed but for now that is out of scope
     - Compaction designed: leveled, split by namespace + session, own thread, bulk load for historical sessions
     - Merge iterator + `SstReader::range` (PR 4b)
     - Bulk load (PR 4e, built before compaction): `begin_ingest` / `put` / `commit`
-    - Column chunk value format + channel catalog (`src/chunk.rs`)
+    - Column chunk value format + channel catalog (`crates/racedata/src/chunk.rs`)
     - `.ibt` reader, track table with official F1 sector lines
+    - Workspace split: `crates/lsm-kv` (the database) and `crates/racedata` (everything about racing)
     - 234 unit tests, CI on Linux and macOS
     - Benchmarks on Mac: crc32fast is 3-4x faster than crc32c, fsync is ~99.9% of a put (~3 ms, ~350 appends/s), memtable get allocation costs nothing measurable (copy ~0.2 us per 2 KB), a full 32 MiB SSTable flush takes ~40 ms, bloom makes missing-key gets ~9x faster
-- Next
-    - PR 4c: compaction core (levels in manifest v2, output splitting, tombstone rules)
-    - PR 4d: compaction thread
-    - Export (the other half of sharing), Windows support
-    - `Mutex` vs `RwLock` for reads, after compaction
+- Next ([ROADMAP.md](ROADMAP.md))
+    - `.ibt` import: chunks, keys, session metadata, bulk load
+    - `Store::scan(start, end)`
+    - OpenF1 fetch, lap processing (Python prototype first), UI
+    - Later: export, Windows support, compaction core (4c) and thread (4d)
 
 ## Milestones
 

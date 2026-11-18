@@ -61,14 +61,67 @@
 
 | Piece | Status |
 |---|---|
-| lsm-kv store | Done for writes, reads, flush, bulk load ([BULK_LOAD.md](BULK_LOAD.md)). Compaction, scan next |
-| `.ibt` reader | Format checked on 4 real files (`scripts/ibt_inspect.py`), Rust reader next. See [IBT.md](IBT.md) |
-| Lap processing | Split laps / sectors, distance grid, best laps, sector times. Not started |
+| lsm-kv store (`crates/lsm-kv`) | Done for writes, reads, flush, bulk load ([BULK_LOAD.md](BULK_LOAD.md)). Scan next, compaction after the first demo |
+| `.ibt` reader (`crates/racedata`) | Reader done (Nov 17), chunks + import next. See [IBT.md](IBT.md) |
+| Lap processing | Laps and sector times done in the reader. Distance grid, delta: Python prototype first (notebook, my lap vs Verstappen), then Rust or TypeScript in the app, tested against the prototype |
 | OpenF1 fetch + cache | Not started. Spa 2023 is session_key 9141 |
 | Export / import | Import side done (bulk load), export next |
 | Windows support | Not started |
-| UI (Tauri, uPlot) | Not started. Screens modelled on VRS / Coach Dave Delta: map with both lines, delta trace, stacked channels, shared cursor, sector table |
+| UI | Not started. Tauri + uPlot (decided Nov 18): Rust backend calls `racedata` / `lsm-kv` directly, web front end. Requirements below |
 | Live collection (iRacing SDK shared memory) | Later |
+
+## UI requirements (Nov 18)
+
+Framework: Tauri + uPlot, with lap processing prototyped in Python first.
+
+| Rejected | Why |
+|---|---|
+| Python (Qt + pyqtgraph) | One language, but a 100-200 MB installer with a slow cold start, Rust -> Python bindings to read the store, and Qt styling is clunky |
+| Electron | Same web front end as Tauri, but ships its own browser (~100 MB+) and its backend is Node, not Rust |
+
+- uPlot gives the shared cursor (`cursor.sync`) and linked zoom out of the box
+- Researched against VRS, Coach Dave Delta and lap-comparison guides (Nov 18): they all start from the delta, then speed, then throttle / brake
+
+### First version: the comparison screen, nothing else
+
+Scope rule: v1 shows **what each driver did** at every point of the lap, side by side, so the user can work out what the other driver does differently. The tool gives the data, the driver draws the conclusions: no coaching, no hints, no generated analysis
+
+| Part | v1 | Why it's needed |
+|---|---|---|
+| Lap picker | Pick two laps from what's in the store (my laps, an imported friend's, an F1 lap) | Nothing works without it |
+| Track map (left) | Sim vs sim (me vs a friend): both laps' driven lines, one marker per car on its own line. F1 vs sim: one track outline, both markers placed by lap distance (the coordinates don't match, TRACKS.md) | Where on track this is, and each driver's line |
+| Delta time chart | Time gained / lost along the lap, lap B minus lap A at each distance | Finds the biggest losses: every guide starts here |
+| Speed chart | Both laps overlaid | First explanation: braking point, minimum corner speed, exit speed |
+| Throttle chart | Both laps overlaid | When and how hard they got back on the power |
+| Brake chart | Both laps overlaid | Where braking starts and how it's released |
+| Gear chart | Both laps overlaid | Every source has it |
+| RPM chart | Both laps overlaid | Shift points, how each driver uses the engine |
+| Steering chart | Both laps overlaid. Sim laps only, an F1 lap shows no line (OpenF1 has no steering) | How much lock, how early, corrections |
+| Inputs widget (under the map) | For each driver at the cursor: steering wheel angle, throttle / brake / clutch bars, gear | What the driver is physically doing at that spot, at a glance |
+| Shared cursor | Hover anywhere: a dotted line across every chart, both map markers move, each chart shows both laps' values at that point | Ties the map to the charts |
+| Linked zoom | Zoom one chart, all follow | Free in uPlot |
+| Lap and sector times | Both laps, official sectors (TRACKS.md), the difference per sector | Sectors are the comparison unit |
+
+- x axis is lap distance (0 to 1 of the lap), never time: the same point on track lines up
+- Two colours, one per lap, the same on the map and every chart
+
+### Not in v1
+
+| Feature | Why it waits |
+|---|---|
+| F1 and sim lines drawn together on the map | iRacing gives lat / lon, OpenF1 a different x / y frame. Overlaying them needs the shape fit (TRACKS.md open question) |
+| Line distance (how far off the racing line) | Needs a reference line per track |
+| Clutch, handbrake charts | Rarely used mid-lap. Clutch still shows in the inputs widget |
+| Tyres, wheel slip, ride height | Car setup detail, and not in F1 data |
+| Video, theoretical best lap, corner-by-corner reports, coaching hints | Out of scope: the tool shows data, it doesn't analyse it for the driver |
+| Comparing three or more laps | Two is the comparison |
+
+### Limits of the data to know about
+
+- OpenF1 samples at ~3.7 Hz (iRacing 60 Hz): F1 traces are coarse, one point every ~20 m at 280 km/h
+- OpenF1's brake is on / off (0 or 100), not pressure: the brake chart shows where an F1 driver braked, not how hard. Shown as-is. No public F1 source has pressure or steering (checked Nov 18: OpenF1, FastF1 and the sites built on them all come from F1's live timing feed). Rejected: estimating "how hard" from deceleration, too unreliable at 3.7 Hz
+- OpenF1's throttle is "percentage of maximum engine power being used", not pedal position. Close enough to compare, but not the same thing as iRacing's pedal
+- No steering in OpenF1
 
 ## Open questions
 

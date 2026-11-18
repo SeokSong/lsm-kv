@@ -1,6 +1,6 @@
 # Column chunks
 
-**Status:** Done (Nov 17): `src/chunk.rs`, 15 tests. Roadmap milestone 1, step 1. The format and the reasons are in [DESIGN.md](DESIGN.md#value-format-column-chunks-decided-nov-16), this doc is the code side.
+**Status:** Done (Nov 17): `crates/racedata/src/chunk.rs`, 15 tests. Roadmap milestone 1, step 1. The format and the reasons are in [DESIGN.md](DESIGN.md#value-format-column-chunks-decided-nov-16), this doc is the code side.
 
 ## Purpose
 
@@ -34,7 +34,7 @@ sample(c,i) = start(c) + i x w(c)
 
 ## Channel catalog
 
-`src/chunk/catalog.rs`. Ids are part of the format: never change or reuse one.
+`crates/racedata/src/chunk/catalog.rs`. Ids are part of the format: never change or reuse one.
 
 | Id | Column | Type | Unit |
 |---|---|---|---|
@@ -82,7 +82,7 @@ sample(c,i) = start(c) + i x w(c)
 
 ## Tests
 
-`src/chunk/tests.rs` (15):
+`crates/racedata/src/chunk/tests.rs` (15):
 - Round trip: iRacing telemetry and position at 512 rows and 1 row, every column type at its limits
 - Sizes match DESIGN.md (24 + 3 x 9 header, 33 bytes a row), layout byte for byte, every column where the `start(c)` / `sample(c,i)` formulas say
 - `max_rows` keeps a 40-column f64 chunk under 64 KiB

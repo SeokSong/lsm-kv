@@ -191,7 +191,7 @@ This also gives us flexability as if we want to construct everything from T1 to 
 
 ### Value format (column chunks), decided Nov 16
 
-- Built Nov 17: `src/chunk.rs`, see [CHUNK.md](CHUNK.md)
+- Built Nov 17: `crates/racedata/src/chunk.rs`, see [CHUNK.md](CHUNK.md)
 
 - Value Format: Little Endian
     - Live view reads from forwarder directly and store is durable record
@@ -423,5 +423,5 @@ Cassandra - Because our use case has 1 node 1 writer we do not need this
 - Sim key order (session before driver) and session id (start time in Unix seconds): chosen so each session gets its own files. Two of a driver's sessions can't start in the same second, but double check against real `.ibt` files
 - Session metadata values (0x03, 0x07): track id, track name, car, date, source, out / in lap flags. Format decided with the ingest PR
 - OpenF1 lap distance is computed from speed and time, and drifts. Correct it per lap with the official lap length
-- Track identity across sources: the track table (`tracks/tracks.toml`) maps iRacing `TrackID` to OpenF1 `circuit_key`. Lap lengths differ (iRacing Spa 6.929 km), laps line up by `lap_dist_pct`. Whether the measured F1 sector lines carry a bias: [TRACKS.md](TRACKS.md)
+- Track identity across sources: the track table (`crates/racedata/tracks/tracks.toml`) maps iRacing `TrackID` to OpenF1 `circuit_key`. Lap lengths differ (iRacing Spa 6.929 km), laps line up by `lap_dist_pct`. Whether the measured F1 sector lines carry a bias: [TRACKS.md](TRACKS.md)
 - Recovery time goal (50 ms): measure in week 5

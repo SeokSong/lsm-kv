@@ -8,10 +8,10 @@ cd "$(dirname "$0")/.."
 runs="${1:-25}"
 filter="${2:-}"
 docker compose run --rm -T dev bash -c "
-  cargo test --no-run -q 2>/dev/null
+  cargo test --workspace --no-run -q 2>/dev/null
   failed=0
   for i in \$(seq 1 $runs); do
-    if ! out=\$(cargo test -q -- $filter 2>&1); then
+    if ! out=\$(cargo test --workspace -q -- $filter 2>&1); then
       failed=\$((failed + 1))
       echo \"run \$i failed:\"
       echo \"\$out\" | grep -E 'panicked|FAILED' | head -5

@@ -153,11 +153,11 @@ We are safe to delete a segment after it has been written to the manifest and fs
 ## Tests
 
 <!-- What will prove this works? Include crash/truncation tests. -->
-- Codec (`src/wal/codec/tests.rs`): 20 tests, done
+- Codec (`crates/lsm-kv/src/wal/codec/tests.rs`): 20 tests, done
     - Encode: Put and Tombstone layouts byte for byte, seq right after the CRC (little endian), key and value at and over the limit
     - Decode: Put/Delete round trip with bytes_used, seq u64::MAX survives, limits round trip, every truncation point returns `Ok(None)`, each CorruptionReason, bit flips, back-to-back records, corrupt length in range
 
-- Writer (`src/wal/writer/tests.rs`): 6 tests, done
+- Writer (`crates/lsm-kv/src/wal/writer/tests.rs`): 6 tests, done
     - File holds exactly the encoded record
     - Several appends come back in order
     - Reopen appends to the end, doesn't overwrite
@@ -165,7 +165,7 @@ We are safe to delete a segment after it has been written to the manifest and fs
     - Failed writer refuses appends
     - Open in a missing directory returns `Io`
 
-- Replay (`src/wal/replay/tests.rs`): 8 tests, done
+- Replay (`crates/lsm-kv/src/wal/replay/tests.rs`): 8 tests, done
     1. Missing file returns empty and doesn't create the file
     2. Empty WAL replay
     3. Write records, replay returns them in order
