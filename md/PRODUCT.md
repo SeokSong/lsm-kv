@@ -63,14 +63,23 @@
 |---|---|
 | lsm-kv store (`crates/lsm-kv`) | Done for writes, reads, flush, bulk load ([BULK_LOAD.md](BULK_LOAD.md)). Scan next, compaction after the first demo |
 | `.ibt` reader (`crates/racedata`) | Reader done (Nov 17), chunks + import next. See [IBT.md](IBT.md) |
-| Lap processing | Laps and sector times done in the reader. Distance grid, delta: prototype in Python first (Nov 18), then where the UI decides |
+| Lap processing | Laps and sector times done in the reader. Distance grid, delta: Python prototype first (notebook, my lap vs Verstappen), then Rust or TypeScript in the app, tested against the prototype |
 | OpenF1 fetch + cache | Not started. Spa 2023 is session_key 9141 |
 | Export / import | Import side done (bulk load), export next |
 | Windows support | Not started |
-| UI | Not started. Framework open: Tauri + uPlot or Python (Qt + pyqtgraph), decided with the user. Requirements below |
+| UI | Not started. Tauri + uPlot (decided Nov 18): Rust backend calls `racedata` / `lsm-kv` directly, web front end. Requirements below |
 | Live collection (iRacing SDK shared memory) | Later |
 
 ## UI requirements (Nov 18)
+
+Framework: Tauri + uPlot, with lap processing prototyped in Python first.
+
+| Rejected | Why |
+|---|---|
+| Python (Qt + pyqtgraph) | One language, but a 100-200 MB installer with a slow cold start, Rust -> Python bindings to read the store, and Qt styling is clunky |
+| Electron | Same web front end as Tauri, but ships its own browser (~100 MB+) and its backend is Node, not Rust |
+
+- uPlot gives the shared cursor (`cursor.sync`) and linked zoom out of the box
 
 The main screen, modelled on the comparison view of existing telemetry tools:
 

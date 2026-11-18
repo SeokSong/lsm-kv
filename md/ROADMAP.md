@@ -34,7 +34,7 @@ If none: it waits. Examples that wait for now: group commit, `Mutex` vs `RwLock`
 | 2 | `.ibt` reader (Rust): own car only, laps, sectors (done Nov 17). Workspace split into `lsm-kv` + `racedata` (Nov 18). Then chunks + import | [IBT.md](IBT.md), [TRACKS.md](TRACKS.md) |
 | 3 | `scan(start, end)` | [MERGE.md](MERGE.md) |
 | 4 | OpenF1 fetch for one race, with a cache cap. Lap distance computed at ingest | [PRODUCT.md](PRODUCT.md) |
-| 5 | Lap processing: both laps on a distance grid, delta, sector times | |
+| 5 | Lap processing: both laps on a distance grid, delta, sector times. Python prototype first, then in the app | [PRODUCT.md](PRODUCT.md) |
 | 6 | Minimal UI (Tauri + uPlot): pick two laps, map, delta trace, 3 channels | [PRODUCT.md](PRODUCT.md) |
 
 ## Milestones 2-4, rough order
@@ -56,3 +56,5 @@ If none: it waits. Examples that wait for now: group commit, `Mutex` vs `RwLock`
 | Other drivers' identity never stored, faster drivers only by consent | [IBT.md](IBT.md) |
 | Leveled compaction, split by namespace + session | [COMPACTION.md](COMPACTION.md) |
 | Development in Docker (Linux), users get a native app | [DEVELOPMENT.md](DEVELOPMENT.md) |
+| Workspace: `lsm-kv` (store) + `racedata` (racing), versions in `[workspace.dependencies]` | [OVERVIEW.md](OVERVIEW.md) |
+| UI: Tauri + uPlot, lap processing prototyped in Python | [PRODUCT.md](PRODUCT.md) |
