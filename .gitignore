@@ -1,5 +1,5 @@
 /target
 .DS_Store
 # local telemetry files: big, and they hold other drivers names and ids. never commit
-/data
+/crates/racedata/data
 __pycache__/

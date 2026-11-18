@@ -1,6 +1,6 @@
 # Bulk load
 
-**Status:** Done in PR 4e (Nov 16): `src/store/ingest.rs`, 19 tests, criterion benchmark. Built before compaction (4c): ingested files join the normal SSTable list for now, and go to the bottom level once levels exist.
+**Status:** Done in PR 4e (Nov 16): `crates/lsm-kv/src/store/ingest.rs`, 19 tests, criterion benchmark. Built before compaction (4c): ingested files join the normal SSTable list for now, and go to the bottom level once levels exist.
 
 ## Purpose
 
@@ -76,7 +76,7 @@ let info = ingest.commit()?;         // IngestInfo { seq, files, entries, bytes 
 
 ## Tests
 
-`src/store/ingest/tests.rs` (19):
+`crates/lsm-kv/src/store/ingest/tests.rs` (19):
 - Basics: every key readable, nothing went through the WAL or memtable, one seq for the whole ingest (puts before and after get the seqs around it), survives a reopen and seqs continue
 - Splits: one file per namespace + session, at the size target (files never overlap), `split_prefix_len = 0` keeps one file
 - Overlaps refused: active memtable, frozen memtable, the same session twice, two ingests of the same range at once. Data right next to the range isn't an overlap
@@ -87,7 +87,7 @@ let info = ingest.commit()?;         // IngestInfo { seq, files, entries, bytes 
 
 ## Benchmark
 
-`benchmark/ingest.rs`, `cargo bench --bench ingest`. Fake data shaped like the 2023 Belgian GP: 44 laps x 3 sectors x 2 streams per car, 2,000-byte chunks. Linux dev container, short run (5 s per case):
+`crates/lsm-kv/benchmark/ingest.rs`, `cargo bench --bench ingest`. Fake data shaped like the 2023 Belgian GP: 44 laps x 3 sectors x 2 streams per car, 2,000-byte chunks. Linux dev container, short run (5 s per case):
 
 | Case | Entries | Time | Per entry |
 |---|---|---|---|

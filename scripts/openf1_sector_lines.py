@@ -6,11 +6,11 @@
 #
 # usage: python3 -I scripts/openf1_sector_lines.py <session_key> [driver_number ...]
 #        python3 -I scripts/openf1_sector_lines.py 9141 1 16 44
-# downloads are cached in data/openf1/ (git ignored)
+# downloads are cached in crates/racedata/data/openf1/ (git ignored)
 import bisect, json, math, os, statistics, sys, urllib.request
 from datetime import datetime
 
-CACHE = os.path.join(os.path.dirname(__file__), "..", "data", "openf1")
+CACHE = os.path.join(os.path.dirname(__file__), "..", "crates", "racedata", "data", "openf1")
 
 def get(endpoint, **params):
     query = "&".join(f"{k}={v}" for k, v in params.items())

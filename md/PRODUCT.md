@@ -61,14 +61,30 @@
 
 | Piece | Status |
 |---|---|
-| lsm-kv store | Done for writes, reads, flush, bulk load ([BULK_LOAD.md](BULK_LOAD.md)). Compaction, scan next |
-| `.ibt` reader | Format checked on 4 real files (`scripts/ibt_inspect.py`), Rust reader next. See [IBT.md](IBT.md) |
-| Lap processing | Split laps / sectors, distance grid, best laps, sector times. Not started |
+| lsm-kv store (`crates/lsm-kv`) | Done for writes, reads, flush, bulk load ([BULK_LOAD.md](BULK_LOAD.md)). Scan next, compaction after the first demo |
+| `.ibt` reader (`crates/racedata`) | Reader done (Nov 17), chunks + import next. See [IBT.md](IBT.md) |
+| Lap processing | Laps and sector times done in the reader. Distance grid, delta: prototype in Python first (Nov 18), then where the UI decides |
 | OpenF1 fetch + cache | Not started. Spa 2023 is session_key 9141 |
 | Export / import | Import side done (bulk load), export next |
 | Windows support | Not started |
-| UI (Tauri, uPlot) | Not started. Screens modelled on VRS / Coach Dave Delta: map with both lines, delta trace, stacked channels, shared cursor, sector table |
+| UI | Not started. Framework open: Tauri + uPlot or Python (Qt + pyqtgraph), decided with the user. Requirements below |
 | Live collection (iRacing SDK shared memory) | Later |
+
+## UI requirements (Nov 18)
+
+The main screen, modelled on the comparison view of existing telemetry tools:
+
+| Part | What it shows |
+|---|---|
+| Track map (left) | The track from position data, both laps' lines overlaid, a marker for each car at the cursor |
+| Channel stack (right) | One chart per channel, stacked: speed, delta time, line distance, throttle, brake, steering, gear, ... Both laps in each chart, x axis = lap distance |
+| Shared cursor | Hovering or clicking a point on any chart's x axis draws a dotted vertical line across every chart at that distance. The map marker and the value readouts follow it |
+| Readouts | Per chart: the value of each lap at the cursor and their difference |
+| Inputs | Steering wheel angle, pedal bars, gear at the cursor |
+| Sector bar (top) | Sector deltas between the two laps |
+
+- Zooming or panning one chart moves every chart (linked x axes)
+- x axis is lap distance, not time: both laps line up by position on track (see "line up by track" above)
 
 ## Open questions
 

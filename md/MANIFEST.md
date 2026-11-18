@@ -105,16 +105,16 @@ one sst:
 
 ## Tests
 
-- Codec (`src/manifest/codec/tests.rs`): 15 tests
+- Codec (`crates/lsm-kv/src/manifest/codec/tests.rs`): 15 tests
     - Round trip, empty manifest is 34 bytes, layout byte for byte
     - Bit flips fail the CRC, every truncation is an error not a panic
     - Bad magic, unsupported version, count past the end, trailing bytes
     - Duplicate file number, file number never handed out, bad seq ranges, bad key range, key too long
     - Decode runs the same checks as save
-- Files (`src/manifest/files/tests.rs`): 6 tests
+- Files (`crates/lsm-kv/src/manifest/files/tests.rs`): 6 tests
     - Names are zero padded, store files parse, other names are ignored (`wal.log`, `1e3.sst`, `+7.wal`, numbers past u64), names round trip
     - Obsolete files: unlisted SSTable and segment, `.tmp` files, others left alone. Nothing obsolete in a clean directory
-- Save / load (`src/manifest/tests.rs`): 8 tests
+- Save / load (`crates/lsm-kv/src/manifest/tests.rs`): 8 tests
     - Missing manifest is a new store, save then load, save replaces the old one, no `.tmp` left behind
     - Half-written `MANIFEST.tmp` after a crash: the old manifest loads, the tmp is obsolete
     - Invalid manifest is never saved, corrupt manifest fails load

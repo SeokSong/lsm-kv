@@ -1,12 +1,12 @@
 # iRacing .ibt files
 
-**Status:** Rust reader done (Nov 17): `src/ibt/`, 15 tests (2 on the real files). Lap times match iRacing's to 0.5 ms. Cutting into chunks and importing: next PR.
+**Status:** Rust reader done (Nov 17): `crates/racedata/src/ibt/`, 15 tests (2 on the real files). Lap times match iRacing's to 0.5 ms. Cutting into chunks and importing: next PR.
 
 ## Where they come from
 
 - iRacing writes one file per stint (getting in the car until getting out) to `Documents\iRacing\telemetry\` on the PC that runs the sim. Telemetry logging has to be turned on in iRacing
 - No API or token: the web Data API (paused for third parties) isn't involved
-- Local copies for development go in `data/` (git ignored: big files, and they hold other drivers' names and ids)
+- Local copies for development go in `crates/racedata/data/` (git ignored: big files, and they hold other drivers' names and ids)
 
 ## Layout (little endian)
 
@@ -72,7 +72,7 @@ Seeing a faster driver's telemetry would be useful. Where it could come from, an
 - The only clean route is consent: drivers share their own laps on purpose. That fits the file sharing model already
 - Names and ids are personal data in privacy law (GDPR in the EU), which is why they never go into the store
 
-## The reader (`src/ibt/`)
+## The reader (`crates/racedata/src/ibt/`)
 
 | Part | What |
 |---|---|
@@ -101,7 +101,7 @@ Laps, from what the real files show:
 - `--channels`: every channel with type, count, unit, description
 - `--yaml`: the session info
 - `--samples N`: N rows spread over the file, the channels above
-- `cargo run --example ibt_laps -- data/<file>.ibt`: the Rust reader's view, every lap with sector times by the key sectors and by iRacing's splits
+- `cargo run -p racedata --example ibt_laps -- crates/racedata/data/<file>.ibt`: the Rust reader's view, every lap with sector times by the key sectors and by iRacing's splits
 - `--laps` on the inspector: rows, first / last lap fraction, pit road rows per lap, and every lap change
 
 ## Open questions

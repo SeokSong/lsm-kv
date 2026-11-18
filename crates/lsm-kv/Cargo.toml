@@ -1,0 +1,50 @@
+[package]
+name = "lsm-kv"
+version.workspace = true
+edition.workspace = true
+
+# criterion runs the benchmarks, the lib has none. without this, cargo bench passes
+# criterion flags (--warm-up-time) to the lib's test harness, which rejects them
+[lib]
+bench = false
+
+[dependencies]
+crc32fast = { workspace = true }
+serde = { workspace = true }
+toml = { workspace = true }
+
+[dev-dependencies]
+# only benchmark/crc.rs uses it, to compare against crc32fast
+crc32c = { workspace = true }
+criterion = { workspace = true }
+tempfile = { workspace = true }
+
+[[bench]]
+name = "crc"
+path = "benchmark/crc.rs"
+harness = false
+
+[[bench]]
+name = "memtable_get"
+path = "benchmark/memtable_get.rs"
+harness = false
+
+[[bench]]
+name = "fsync"
+path = "benchmark/fsync.rs"
+harness = false
+
+[[bench]]
+name = "sstable"
+path = "benchmark/sstable.rs"
+harness = false
+
+[[bench]]
+name = "merge"
+path = "benchmark/merge.rs"
+harness = false
+
+[[bench]]
+name = "ingest"
+path = "benchmark/ingest.rs"
+harness = false

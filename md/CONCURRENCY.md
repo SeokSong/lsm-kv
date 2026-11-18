@@ -1,6 +1,6 @@
 # Concurrency
 
-**Status:** Built in PR 3b (Nov 13). Every rule below is in `src/store.rs` and tested, including a check that breaking rule 3 makes the deadlock test fail. The compaction thread is designed (Nov 16), built in PR 4d, see [The compaction thread (planned)](#the-compaction-thread-planned).
+**Status:** Built in PR 3b (Nov 13). Every rule below is in `crates/lsm-kv/src/store.rs` and tested, including a check that breaking rule 3 makes the deadlock test fail. The compaction thread is designed (Nov 16), built in PR 4d, see [The compaction thread (planned)](#the-compaction-thread-planned).
 
 Diagram: [diagrams/threads-and-locks.drawio](diagrams/threads-and-locks.drawio), two pages: a plain-language overview for non-technical readers, and the technical version of this file.
 
@@ -197,7 +197,7 @@ How long rule 13 can hold compaction back:
 
 ## Tests
 
-In `src/store/tests.rs`. Everything that could hang runs under `within(seconds, ...)`, so a deadlock fails the test instead of freezing CI.
+In `crates/lsm-kv/src/store/tests.rs`. Everything that could hang runs under `within(seconds, ...)`, so a deadlock fails the test instead of freezing CI.
 
 | Test | Proves |
 |---|---|

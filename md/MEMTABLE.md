@@ -98,7 +98,7 @@
 
 ## Tests
 
-- `src/memtable/tests.rs`: 14 tests, done
+- `crates/lsm-kv/src/memtable/tests.rs`: 14 tests, done
     - New memtable is empty
     - Put then get returns Found, missing key returns NotFound
     - Overwrite returns the newest value, still one entry

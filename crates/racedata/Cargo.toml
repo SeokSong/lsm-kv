@@ -1,0 +1,14 @@
+[package]
+name = "racedata"
+version.workspace = true
+edition.workspace = true
+
+# no benchmarks here. without this, `cargo bench -- <criterion flags>` at the workspace root
+# hands the flags to this lib's test harness, which rejects them
+[lib]
+bench = false
+
+[dependencies]
+lsm-kv = { workspace = true }
+serde = { workspace = true }
+toml = { workspace = true }
