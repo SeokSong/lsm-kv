@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # looks inside an iRacing .ibt telemetry file: header, channels, session info, a few samples.
-# usage: python3 -I scripts/ibt_inspect.py <file.ibt> [--channels] [--yaml] [--samples N]
+# usage: python3 -I scripts/ibt_inspect.py <file.ibt> [--channels] [--yaml] [--samples N] [--laps]
 # layout (irsdk): 112-byte header, 32-byte disk sub header, 144-byte var headers,
 # session info yaml, then fixed-size sample rows
 import struct, sys
@@ -50,6 +50,8 @@ def main():
             print(f"    {v['name']:32s} {TYPES[v['type']][0]:8s} x{v['count']:<3d} {v['unit']:12s} {v['desc']}")
     if "--yaml" in sys.argv:
         print(yaml)
+    if "--laps" in sys.argv:
+        laps(data, header, variables, rows_by_size)
     if "--samples" in sys.argv:
         n = int(sys.argv[sys.argv.index("--samples") + 1])
         names = {"SessionTime", "Lap", "LapDist", "LapDistPct", "Speed", "Throttle", "Brake",
@@ -58,6 +60,32 @@ def main():
         for row in range(0, rows_by_size, step)[:n]:
             print("   ", {k: round(v, 3) if isinstance(v, float) else v
                           for k, v in sample(data, header, variables, row, names).items()})
+
+def laps(data, header, variables, rows):
+    # per lap: rows, first / last LapDistPct, on track, pit road, and the time iRacing reports
+    names = {"SessionTime", "Lap", "LapDistPct", "IsOnTrack", "OnPitRoad", "LapLastLapTime"}
+    current, first, prev = None, None, None
+    stats = {}
+    boundary = []
+    for row in range(rows):
+        s = sample(data, header, variables, row, names)
+        lap = s["Lap"]
+        st = stats.setdefault(lap, {"rows": 0, "first": s, "last": s, "off": 0, "pit": 0})
+        st["rows"] += 1
+        st["last"] = s
+        st["off"] += not s["IsOnTrack"]
+        st["pit"] += s["OnPitRoad"]
+        if prev is not None and lap != prev["Lap"]:
+            boundary.append((row, prev, s))
+        prev = s
+    for lap, st in sorted(stats.items()):
+        print(f"  lap {lap:>3}: rows {st['rows']:>6}  pct {st['first']['LapDistPct']:.4f} -> {st['last']['LapDistPct']:.4f}"
+              f"  time {st['first']['SessionTime']:8.2f} -> {st['last']['SessionTime']:8.2f}"
+              f"  off track rows {st['off']:>5}  pit road rows {st['pit']:>5}  last lap time after: {st['last']['LapLastLapTime']:.3f}")
+    print("  lap changes (pct before -> after):")
+    for row, before, after in boundary:
+        print(f"    row {row}: lap {before['Lap']} -> {after['Lap']}  pct {before['LapDistPct']:.4f} -> {after['LapDistPct']:.4f}"
+              f"  t {after['SessionTime']:.3f}")
 
 if __name__ == "__main__":
     main()
