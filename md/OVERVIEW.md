@@ -97,7 +97,7 @@ Cargo workspace, two crates (split Nov 18):
 | Benchmarks | Microbenchmarks now, F1 replay and YCSB-style workloads later | In progress: CRC-32, fsync + group commit + `Store::put`, memtable get, full-size SSTable as criterion benches, run on Mac and in the Linux dev container. Real-hardware Linux fsync still to do | [BENCHMARKS.md](BENCHMARKS.md) |
 | Development | Linux dev container: Docker + VS Code Dev Containers, every cargo command runs in it | Done (Nov 16) | [DEVELOPMENT.md](DEVELOPMENT.md) |
 | Config | Tuning settings in TOML (`crates/lsm-kv/config/*.toml`), format constants stay in code | Done for memtable + SSTable settings (11 tests) | [CONFIG.md](CONFIG.md) |
-| Store | Public API: open (replay), put / delete (WAL then memtable), get | Done for v1 writes + reads: WAL segments, manifest, background flush, get across memtables + SSTables, shareable across threads, close (39 tests). Scan in week 5 | [STORE.md](STORE.md) |
+| Store | Public API: open (replay), put / delete (WAL then memtable), get, scan | Done for v1 writes + reads: WAL segments, manifest, background flush, get across memtables + SSTables, shareable across threads, close, scan (49 tests) | [STORE.md](STORE.md) |
 
 <!-- Status ideas: Not started / Designing / In progress / Done / Tested / Benchmarked -->
 
@@ -123,11 +123,11 @@ Cargo workspace, two crates (split Nov 18):
     - Column chunk value format + channel catalog (`crates/racedata/src/chunk.rs`)
     - `.ibt` reader, track table with official F1 sector lines
     - Workspace split: `crates/lsm-kv` (the database) and `crates/racedata` (everything about racing)
-    - 234 unit tests, CI on Linux and macOS
+    - `Store::scan(start, end)`: newest value per key across every layer, tombstones hidden, SSTables outside the range skipped
+    - 244 unit tests, CI on Linux and macOS
     - Benchmarks on Mac: crc32fast is 3-4x faster than crc32c, fsync is ~99.9% of a put (~3 ms, ~350 appends/s), memtable get allocation costs nothing measurable (copy ~0.2 us per 2 KB), a full 32 MiB SSTable flush takes ~40 ms, bloom makes missing-key gets ~9x faster
 - Next ([ROADMAP.md](ROADMAP.md))
     - `.ibt` import: chunks, keys, session metadata, bulk load
-    - `Store::scan(start, end)`
     - OpenF1 fetch, lap processing (Python prototype first), UI
     - Later: export, Windows support, compaction core (4c) and thread (4d)
 
@@ -142,7 +142,7 @@ Revised 2026-11-13: background flush pulls WAL segments and the manifest into we
 | 2 | Nov 17-23 | SSTable writer + reader: data blocks, index, footer, block CRC, point lookup, bloom filters | Done (Nov 13) |
 | 3 | Nov 24-30 | Sequence numbers, minimal manifest, background flush, frozen memtable queue, WAL segments, read path across memtables + SSTables, Store shareable across threads | Done (Nov 13) |
 | 4 | Dec 1-7 | Compaction (leveled), merge iterator, atomic swap through the manifest, dropping tombstones, bulk load | In progress: benchmarks, design, merge iterator, bulk load done (Nov 16) |
-| 5 | Dec 8-14 | Scan (on the merge iterator from 4b), crash tests (kill -9), property tests, recovery cleanup | |
+| 5 | Dec 8-14 | Scan (on the merge iterator from 4b), crash tests (kill -9), property tests, recovery cleanup | Scan done early (Nov 22) |
 | 6 | Dec 15-21 | Ingest (FastF1 -> Parquet -> keys / values), benchmarks on Linux, group commit, RocksDB / sled comparison, README | |
 
 ## Full design

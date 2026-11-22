@@ -37,6 +37,7 @@ Run from the repo root (`~/dev/lsm-tree-key-value-store/lsm-kv`):
 | Laps and sector times of `.ibt` files | `docker compose run --rm dev cargo run -p racedata --example ibt_laps -- crates/racedata/data/<file>.ibt` |
 | Official F1 sector lines of a track | `python3 -I scripts/openf1_sector_lines.py <session> <drivers>` (fetches OpenF1, cached in `crates/racedata/data/openf1/`) |
 | Run the tests many times to catch flaky (timing dependent) tests | `scripts/repeat-tests.sh 50`, or `scripts/repeat-tests.sh 50 store` for only `store` tests |
+| Check the tests can fail: break one line on purpose, run the tests, put it back | `scripts/mutation-check.sh <file> '<sed expression>' [test filter]`. Passes when a test fails. The file is always restored |
 
 - Criterion's HTML reports land in the `target` volume. To keep one, copy it out: `docker compose run --rm dev bash -c "cp -r /target/criterion /workspace/criterion-report"` (not in `.gitignore`, so don't commit it)
 

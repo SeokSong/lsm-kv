@@ -61,7 +61,7 @@
 
 <!-- How do you merge several sorted SSTables? Which version of a key wins? -->
 
-- K-way merge of sorted inputs (memtables and SSTables), the merge iterator from PR 4b, see [MERGE.md](MERGE.md). Also what `scan` uses in week 5
+- K-way merge of sorted inputs (memtables and SSTables), the merge iterator from PR 4b, see [MERGE.md](MERGE.md). Also what `scan` uses ([SCAN.md](SCAN.md))
 - Same key in several inputs: the highest seq wins, older versions are dropped (no snapshots, nobody can read them)
 
 ## Tombstones

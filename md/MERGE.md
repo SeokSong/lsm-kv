@@ -1,6 +1,6 @@
 # Merge iterator
 
-**Status:** Done in PR 4b (Nov 16): `crates/lsm-kv/src/merge.rs`, 11 tests plus 4 for `SstReader::range`, criterion benchmark. Used by compaction (4c) and scan (week 5).
+**Status:** Done in PR 4b (Nov 16): `crates/lsm-kv/src/merge.rs`, 11 tests plus 4 for `SstReader::range`, criterion benchmark. Used by scan (done Nov 22, [SCAN.md](SCAN.md)) and compaction (4c).
 
 ## Purpose
 
@@ -94,7 +94,7 @@ The merge is only right if its inputs follow these. They're checked as it runs, 
 
 ## Open questions
 
-- Scan (week 5): an iterator that outlives the State lock has to own the frozen memtable and SSTable `Arc`s and borrow from them at once (self-referential), and the active memtable can't be borrowed after unlocking. Decide the scan API then
+- Scan API: decided Nov 22, `Store::scan` returns a `Vec` (built inside the function, so nothing outlives the lock or the borrows). An iterator the caller keeps would need `SstIter` to own an `Arc` of its reader. Only if a caller ever needs streaming. See [SCAN.md](SCAN.md)
 - Linear scan vs heap for small k: only worth measuring if the merge ever shows up in a compaction profile
 
 ## See also
