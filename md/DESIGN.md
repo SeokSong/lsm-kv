@@ -37,8 +37,8 @@ Last updated Nov 16. Details live in the component docs (linked per section). Th
 - Key/value types and size limits: 
     - Key: 16 bytes
     - Values: 64 KB
-- scan(start, end) -> Resuilt(Iterator(key, value))
-    - Not built yet (week 5). Start inclusive, end exclusive. The merge iterator and `SstReader::range` it builds on are done
+- scan(start, end) -> Result<Vec<KeyValue>>
+    - Done (Nov 22). Start inclusive, end exclusive, newest value per key, tombstones hidden. The app scans one lap at a time. See [SCAN.md](SCAN.md)
 - Bulk load (done): `begin_ingest()` -> `Ingest::put(key, value)` in key order -> `Ingest::commit()`. See [BULK_LOAD.md](BULK_LOAD.md)
 - `open(dir, config)`, `close()`, `stats()`, `last_seq()`. Full list: [STORE.md](STORE.md)
 
@@ -124,7 +124,7 @@ get / scan ◄── active memtable, frozen memtables, SSTables (newest max_seq
 - Put / delete: [STORE.md](STORE.md#write-path-put--delete). Bulk load: [BULK_LOAD.md](BULK_LOAD.md)
 
 ## 5. Read path
-- Get: [STORE.md](STORE.md#read-path-get). Scan: week 5, on top of [MERGE.md](MERGE.md)
+- Get: [STORE.md](STORE.md#read-path-get). Scan: [STORE.md](STORE.md#read-path-scan), [SCAN.md](SCAN.md)
 
 ## 6. Data Model
 

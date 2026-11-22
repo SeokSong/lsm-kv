@@ -1,6 +1,6 @@
 # Store
 
-**Status:** PR 3a + 3b done: WAL segments, manifest, background flush to SSTables with retries and backpressure, get across every layer, crash recovery at each flush step, shareable across threads (`Arc<Store>`), close (39 tests). Scan comes in week 5.
+**Status:** PR 3a + 3b done: WAL segments, manifest, background flush to SSTables with retries and backpressure, get across every layer, crash recovery at each flush step, shareable across threads (`Arc<Store>`), close, scan (49 tests).
 
 ## Purpose
 
@@ -76,6 +76,14 @@ Newest first, the first `Found` or `Deleted` wins:
 - Never waits behind a put's fsync or a manifest save: gets only take the State lock, and only for memory work
 - Returns an owned `Vec<u8>`. Benchmarked: the allocation costs nothing measurable, see [BENCHMARKS.md](BENCHMARKS.md)
 
+## Read path (scan)
+
+1. Under the State lock: copy the active memtable's entries in `[start, end)`, clone the frozen + SSTable `Arc`s, unlock. One lock = one consistent snapshot
+2. One source per memtable and per SSTable whose key range overlaps (`last_key >= start && first_key < end`), each seeking to `start` once
+3. The merge iterator ([MERGE.md](MERGE.md)) gives the newest version of each key in order. Tombstones are skipped here, not in the merge (compaction needs them)
+
+- Details and decisions: [SCAN.md](SCAN.md)
+
 ## Errors
 
 | `StoreError` | When |
@@ -89,6 +97,7 @@ Newest first, the first `Found` or `Deleted` wins:
 | `Failed` | A flush, manifest save, or WAL write failed earlier, writes are refused (reads still work). Also a poisoned lock |
 | `Closed` | `close` was called, writes are refused (reads still work) |
 | `Ingest(IngestError)` | A bulk load was refused: `OutOfOrder`, `Empty`, `Overlaps`, `Aborted`. Nothing it wrote is left |
+| `Merge(MergeError)` | A scan's merge stopped: an SSTable read failed (I/O, corruption), or a source was out of order or had a duplicate seq (a bug) |
 
 - `open` takes an already parsed `Config`, so config errors never reach the store
 
@@ -98,6 +107,7 @@ Newest first, the first `Found` or `Deleted` wins:
 - `put(&self, key: Vec<u8>, value: Vec<u8>) -> Result<(), StoreError>`
 - `delete(&self, key: Vec<u8>) -> Result<(), StoreError>`
 - `get(&self, key: &[u8]) -> Result<Option<Vec<u8>>, StoreError>`
+- `scan(&self, start: &[u8], end: &[u8]) -> Result<Vec<KeyValue>, StoreError>`: every live key in `[start, end)`, newest value, sorted. See [SCAN.md](SCAN.md)
 - `close(&self) -> Result<(), StoreError>`: stop writes, finish queued flushes, join the flush thread, return the flush error that failed the store. Safe to call twice. `Drop` calls it too (errors dropped)
 - `stats(&self) -> StoreStats { stalls, stall_time, flushes, failed_flush_attempts, ingests }`
 - `begin_ingest(&self) -> Result<Ingest, StoreError>`, then `Ingest::put(key, value)` and `Ingest::commit() -> IngestInfo`: bulk load, see [BULK_LOAD.md](BULK_LOAD.md)
@@ -107,7 +117,7 @@ Newest first, the first `Found` or `Deleted` wins:
 
 ## Tests
 
-- `crates/lsm-kv/src/store/tests.rs`: 39 tests, done
+- `crates/lsm-kv/src/store/tests.rs`: 49 tests, done
 - Basics: open creates the manifest + first segment, put / get, missing key, delete, overwrite, rejected put changes nothing and uses no seq
 - Recovery: reopen after puts / deletes, after a torn tail, corrupt WAL fails with the offset, seqs continue after reopen, and continue from the manifest when every segment was already flushed
 - Swap: happens before the put that would overflow (memtable never over the threshold), empty memtable takes an oversized put, a rejected put doesn't trigger a flush
@@ -116,13 +126,13 @@ Newest first, the first `Found` or `Deleted` wins:
 - Crash at each flush step (before step 1, after 1, 2, 3): checks the files and the manifest at the crash, then after reopen nothing is lost, one SSTable, one segment, no garbage
 - Failed flush: retried and cleaned up, the store fails after max attempts, later puts get `Failed`, reads still work, close returns the error, reopen recovers everything and takes writes again
 - Threads (PR 3b): Send + Sync, flush in the background, backpressure with reads still working, a waiting put wakes on failure and on close, close finishes the queue, out-of-order flushes read the newest value, 4 writers + 2 readers at once, dropping the last `Arc` stops the thread. Table in [CONCURRENCY.md](CONCURRENCY.md)
+- Scan (10 tests): empty and reversed ranges, start included / end excluded, keys across every layer, newest value wins, tombstones in every layer, SSTables outside the range skipped (proven by corrupting one), every flush step, later writes, one sector out of several laps, scans + puts from many threads. Table in [SCAN.md](SCAN.md)
 - Open refuses: missing manifest with store files (files untouched), old `wal.log`, SSTable with the wrong size
 - Cleanup: unlisted `.sst`, `.wal`, `.tmp` files deleted at open, other files left alone, leftover `MANIFEST.tmp` from a crash during the first open
 - Checked that the tests can fail: with the cleanup at open turned off, the crash and cleanup tests fail. Holding the manifest lock while waiting for queue space deadlocks the store and the backpressure test fails after 5 s
 
 ## Open questions
 
-- `scan(start, end)` waits for week 5: a merge iterator across memtables and SSTables that skips tombstones and hides older versions
 - Seqs aren't checked across segments at open, only inside each one (replay). A segment starting below the previous one's last seq would go unnoticed
 - Zero-copy reads: revisit when the triggers in [BENCHMARKS.md](BENCHMARKS.md) show up
 - A get clones the list of SSTable `Arc`s every time. Fine with a handful of files, compaction keeps it short. Measure with the `Mutex` vs `RwLock` benchmark

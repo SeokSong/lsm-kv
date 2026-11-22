@@ -32,7 +32,7 @@ If none: it waits. Examples that wait for now: group commit, `Mutex` vs `RwLock`
 |---|---|---|
 | 1 | Value encoding: column chunks, the channel catalog (Rust). Done Nov 17 | [CHUNK.md](CHUNK.md) |
 | 2 | `.ibt` reader (Rust): own car only, laps, sectors (done Nov 17). Workspace split into `lsm-kv` + `racedata` (Nov 18). Then chunks + import | [IBT.md](IBT.md), [TRACKS.md](TRACKS.md) |
-| 3 | `scan(start, end)` | [MERGE.md](MERGE.md) |
+| 3 | `scan(start, end)`. Done Nov 22 | [SCAN.md](SCAN.md) |
 | 4 | OpenF1 fetch for one race, with a cache cap. Lap distance computed at ingest | [PRODUCT.md](PRODUCT.md) |
 | 5 | Lap processing: both laps on a distance grid, delta, sector times. Python prototype first, then in the app | [PRODUCT.md](PRODUCT.md) |
 | 6 | Minimal UI (Tauri + uPlot): pick two laps, map, delta trace, 3 channels | [PRODUCT.md](PRODUCT.md) |
