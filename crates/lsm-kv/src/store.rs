@@ -15,6 +15,7 @@ use crate::manifest::{
     FileKind, Manifest, SstMeta, obsolete_files, parse_file_name, sst_file_name, wal_file_name,
 };
 use crate::memtable::{Lookup, Memtable};
+use crate::merge::{Source, memtable_range_source, merge};
 use crate::sstable::{SstInfo, SstLookup, SstReader, SstWriter};
 use crate::wal::{self, Op, Record, WalError, WalWriter};
 
@@ -24,6 +25,13 @@ pub use ingest::{Ingest, IngestInfo};
 // the single WAL file from before segments. a directory with one of these and no
 // manifest isn't a new store
 const OLD_WAL_FILE_NAME: &str = "wal.log";
+
+// one scan result: a live key and its newest value
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct KeyValue {
+    pub key: Vec<u8>,
+    pub value: Vec<u8>,
+}
 
 // shareable across threads: callers use Arc<Store>, every method takes &self.
 // the lock design and the rules that keep it deadlock free are in md/CONCURRENCY.md
@@ -303,6 +311,51 @@ impl Store {
         }
 
         Ok(None)
+    }
+
+    pub fn scan(&self, start: &[u8], end: &[u8]) -> Result<Vec<KeyValue>, StoreError> {
+        let (active, frozen, sstables): (Vec<Record>, Vec<Arc<Frozen>>, Vec<Arc<LiveSst>>) = {
+            let state: MutexGuard<'_, State> = lock(&self.inner.state)?;
+            let active: Vec<Record> = memtable_range_source(&state.active, start, end)
+                .collect::<Result<Vec<Record>, _>>()?;
+
+            let frozen: Vec<Arc<Frozen>> = state
+                .frozen
+                .iter()
+                .map(|slot| slot.frozen.clone())
+                .collect();
+            (active, frozen, state.sstables.clone())
+        };
+
+        let mut sources: Vec<Source<'_>> = Vec::new();
+
+        sources.push(Box::new(active.into_iter().map(Ok)));
+
+        for f in &frozen {
+            sources.push(memtable_range_source(&f.memtable, start, end));
+        }
+
+        for sst in &sstables {
+            if sst.meta.last_key.as_slice() >= start && sst.meta.first_key.as_slice() < end {
+                sources.push(Box::new(sst.reader.range(start, end)));
+            }
+        }
+
+        let mut results: Vec<KeyValue> = Vec::new();
+
+        for item in merge(sources) {
+            let record: Record = item?;
+
+            // tombstones are skipped here, not in merge: compaction uses the same merge and needs them
+            match record.op {
+                Op::Put { value } => results.push(KeyValue {
+                    key: record.key,
+                    value,
+                }),
+                Op::Delete => {}
+            }
+        }
+        Ok(results)
     }
 
     // stops taking writes, waits for the queued flushes, stops the flush thread.

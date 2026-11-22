@@ -1,7 +1,9 @@
 use super::*;
 use crate::config::{FlushConfig, MemtableConfig};
 use crate::manifest::MANIFEST_FILE_NAME;
+use crate::merge::MergeError;
 use crate::wal::{CorruptionReason, SizeField, WalError, encode};
+use std::io::Write;
 use std::sync::mpsc;
 use tempfile::TempDir;
 
@@ -159,6 +161,16 @@ impl Store {
 
     fn fail_next_flushes(&self, count: u32) {
         self.inner.hooks.fail_flushes.store(count, Ordering::SeqCst);
+    }
+
+    // file path of every SSTable, in the order a get searches them (newest max_seq first)
+    fn sst_paths(&self) -> Vec<PathBuf> {
+        let state: MutexGuard<'_, State> = self.inner.state.lock().unwrap();
+        state
+            .sstables
+            .iter()
+            .map(|sst| sst.reader.path().to_path_buf())
+            .collect()
     }
 
     // every memtable waiting out a retry becomes due now, so a test decides when a retry
@@ -1028,4 +1040,289 @@ fn dropping_the_last_arc_stops_the_flush_thread() {
     let store: Store = Store::open(&path, small_config(300)).unwrap();
     assert_keys(&store, 0..10);
     assert_eq!(wal_count(&path), 1);
+}
+
+// ---------- scan (md/SCAN.md) ----------
+
+// what scan should return for the nth_key indexes in keys, with put_keys' values
+fn expected(keys: impl IntoIterator<Item = usize>) -> Vec<KeyValue> {
+    keys.into_iter()
+        .map(|i| KeyValue {
+            key: nth_key(i),
+            value: vec![i as u8; 100],
+        })
+        .collect()
+}
+
+fn put_one(store: &Store, i: usize) {
+    store.put(nth_key(i), vec![i as u8; 100]).unwrap();
+}
+
+// the active memtable becomes an SSTable: swap it out, run the whole flush by hand
+fn flush_active(store: &Store) {
+    store.swap_memtable();
+    store.flush_oldest_until(FlushStep::Install);
+}
+
+#[test]
+fn scan_of_an_empty_store_or_range_is_empty() {
+    let dir: TempDir = TempDir::new().unwrap();
+    let store: Store = Store::open(dir.path(), Config::default()).unwrap();
+    assert_eq!(store.scan(&nth_key(0), &nth_key(10)).unwrap(), vec![]);
+
+    put_keys(&store, 0..10);
+    // end == start: empty. end < start: empty, not a panic (BTreeMap::range would panic)
+    assert_eq!(store.scan(&nth_key(5), &nth_key(5)).unwrap(), vec![]);
+    assert_eq!(store.scan(&nth_key(7), &nth_key(2)).unwrap(), vec![]);
+}
+
+#[test]
+fn scan_includes_start_and_excludes_end() {
+    let dir: TempDir = TempDir::new().unwrap();
+    let store: Store = Store::open(dir.path(), Config::default()).unwrap();
+    put_keys(&store, 0..10);
+
+    assert_eq!(
+        store.scan(&nth_key(2), &nth_key(7)).unwrap(),
+        expected(2..7)
+    );
+    // the whole store
+    assert_eq!(store.scan(&[], &[0xFF; 16]).unwrap(), expected(0..10));
+}
+
+#[test]
+fn scan_merges_every_layer_in_key_order() {
+    let dir: TempDir = TempDir::new().unwrap();
+    let store: Store = Store::open_without_flush_thread(dir.path(), Config::default());
+    // keys interleaved across the layers, so the merge has to pick from each in turn
+    for i in [0, 3, 6] {
+        put_one(&store, i);
+    }
+    flush_active(&store);
+    for i in [1, 4, 7] {
+        put_one(&store, i);
+    }
+    store.swap_memtable();
+    for i in [2, 5, 8] {
+        put_one(&store, i);
+    }
+    assert_eq!(store.sstable_count(), 1);
+    assert_eq!(store.frozen_count(), 1);
+    assert_eq!(store.active_len(), 3);
+
+    assert_eq!(
+        store.scan(&nth_key(0), &nth_key(9)).unwrap(),
+        expected(0..9)
+    );
+}
+
+#[test]
+fn scan_returns_the_newest_value() {
+    let dir: TempDir = TempDir::new().unwrap();
+    let store: Store = Store::open_without_flush_thread(dir.path(), Config::default());
+    let key: Vec<u8> = nth_key(0);
+    let newest = |store: &Store| -> Vec<u8> {
+        let results: Vec<KeyValue> = store.scan(&nth_key(0), &nth_key(2)).unwrap();
+        assert_eq!(results.len(), 2, "one entry per key, older versions hidden");
+        assert_eq!(
+            results[1],
+            expected([1])[0],
+            "untouched key keeps its value"
+        );
+        results[0].value.clone()
+    };
+
+    store.put(key.clone(), vec![1; 10]).unwrap();
+    put_one(&store, 1);
+    flush_active(&store);
+    assert_eq!(newest(&store), vec![1; 10]);
+
+    // newer in a frozen memtable than in the SSTable
+    store.put(key.clone(), vec![2; 10]).unwrap();
+    store.swap_memtable();
+    assert_eq!(newest(&store), vec![2; 10]);
+
+    // newer in the active memtable than in both
+    store.put(key.clone(), vec![3; 10]).unwrap();
+    assert_eq!(newest(&store), vec![3; 10]);
+}
+
+#[test]
+fn scan_hides_deleted_keys_in_every_layer() {
+    let dir: TempDir = TempDir::new().unwrap();
+    let store: Store = Store::open_without_flush_thread(dir.path(), Config::default());
+    put_keys(&store, 0..3);
+    flush_active(&store);
+    let scan_all = |store: &Store| store.scan(&nth_key(0), &nth_key(3)).unwrap();
+
+    // the value is in an SSTable, the tombstone in the active memtable
+    store.delete(nth_key(1)).unwrap();
+    assert_eq!(scan_all(&store), expected([0, 2]));
+
+    // tombstone in a frozen memtable
+    store.swap_memtable();
+    assert_eq!(scan_all(&store), expected([0, 2]));
+
+    // tombstone in a newer SSTable than the value
+    store.flush_oldest_until(FlushStep::Install);
+    assert_eq!(store.sstable_count(), 2);
+    assert_eq!(scan_all(&store), expected([0, 2]));
+}
+
+#[test]
+fn scan_skips_sstables_outside_the_range() {
+    let dir: TempDir = TempDir::new().unwrap();
+    let store: Store = Store::open_without_flush_thread(dir.path(), Config::default());
+    // file A holds keys 0..3: its last_key is the scan's start, so it has to be read
+    put_keys(&store, 0..3);
+    flush_active(&store);
+    // file C holds keys 5..8: its first_key is the scan's end, which is excluded
+    put_keys(&store, 5..8);
+    flush_active(&store);
+    put_keys(&store, 3..5);
+
+    // break C's first data block on disk. if the scan read C at all, it would fail
+    let file_c: PathBuf = store.sst_paths()[0].clone();
+    let mut file: fs::File = fs::OpenOptions::new().write(true).open(&file_c).unwrap();
+    file.write_all(&[0xFF; 16]).unwrap();
+    file.sync_all().unwrap();
+    // check the damage is real: a scan that does overlap C fails
+    let result = store.scan(&nth_key(5), &nth_key(8));
+    assert!(
+        matches!(result, Err(StoreError::Merge(MergeError::Sst(_)))),
+        "{result:?}"
+    );
+
+    assert_eq!(
+        store.scan(&nth_key(2), &nth_key(5)).unwrap(),
+        expected(2..5)
+    );
+}
+
+#[test]
+fn scan_is_correct_at_every_flush_step() {
+    for step in [
+        FlushStep::WriteSstable,
+        FlushStep::SaveManifest,
+        FlushStep::DeleteSegment,
+        FlushStep::Install,
+    ] {
+        let dir: TempDir = TempDir::new().unwrap();
+        let store: Store = Store::open_without_flush_thread(dir.path(), Config::default());
+        put_keys(&store, 0..5);
+        store.swap_memtable();
+        put_keys(&store, 5..7);
+        store.flush_oldest_until(step);
+
+        // every key exactly once, whichever layer it's in at this step
+        assert_eq!(
+            store.scan(&nth_key(0), &nth_key(7)).unwrap(),
+            expected(0..7),
+            "after {step:?}"
+        );
+    }
+}
+
+#[test]
+fn scan_result_does_not_change_after_later_writes() {
+    let dir: TempDir = TempDir::new().unwrap();
+    let store: Store = Store::open(dir.path(), Config::default()).unwrap();
+    put_keys(&store, 0..3);
+
+    let before: Vec<KeyValue> = store.scan(&nth_key(0), &nth_key(5)).unwrap();
+    put_keys(&store, 3..5);
+    store.delete(nth_key(0)).unwrap();
+
+    assert_eq!(before, expected(0..3));
+    assert_eq!(
+        store.scan(&nth_key(0), &nth_key(5)).unwrap(),
+        expected(1..5)
+    );
+}
+
+#[test]
+fn scan_of_one_sector_returns_only_its_chunks() {
+    let dir: TempDir = TempDir::new().unwrap();
+    let store: Store = Store::open_without_flush_thread(dir.path(), Config::default());
+    let value = |lap: u16, sector: u8, chunk: u16| vec![lap as u8, sector, chunk as u8];
+    // laps 1-3, sectors 1-3, chunks 0-3. lap 1 and 2 in an SSTable, lap 3 in the memtable
+    for lap in 1..=3u16 {
+        for sector in 1..=3u8 {
+            for chunk in 0..4u16 {
+                store
+                    .put(telemetry_key(lap, sector, chunk), value(lap, sector, chunk))
+                    .unwrap();
+            }
+        }
+        if lap == 2 {
+            flush_active(&store);
+        }
+    }
+
+    // lap 2 sector 2: from its chunk 0 up to sector 3's chunk 0
+    let results: Vec<KeyValue> = store
+        .scan(&telemetry_key(2, 2, 0), &telemetry_key(2, 3, 0))
+        .unwrap();
+    let want: Vec<KeyValue> = (0..4u16)
+        .map(|chunk| KeyValue {
+            key: telemetry_key(2, 2, chunk),
+            value: value(2, 2, chunk),
+        })
+        .collect();
+    assert_eq!(results, want);
+
+    // the whole of lap 3, in the memtable: 3 sectors x 4 chunks
+    let lap_3: Vec<KeyValue> = store
+        .scan(&telemetry_key(3, 1, 0), &telemetry_key(4, 1, 0))
+        .unwrap();
+    assert_eq!(lap_3.len(), 12);
+}
+
+#[test]
+fn scans_and_puts_from_many_threads() {
+    const WRITERS: usize = 4;
+    const PUTS_PER_WRITER: usize = 50;
+    let dir: TempDir = TempDir::new().unwrap();
+    // small memtables: flushes run in the background while the scans do
+    let store: Arc<Store> = Arc::new(Store::open(dir.path(), small_config(1_000)).unwrap());
+
+    let run_store: Arc<Store> = store.clone();
+    within(30, move || {
+        let mut handles: Vec<JoinHandle<()>> = Vec::new();
+        for writer in 0..WRITERS {
+            let store: Arc<Store> = run_store.clone();
+            handles.push(thread::spawn(move || {
+                for n in 0..PUTS_PER_WRITER {
+                    put_one(&store, writer * PUTS_PER_WRITER + n);
+                }
+            }));
+        }
+        for _ in 0..2 {
+            let store: Arc<Store> = run_store.clone();
+            handles.push(thread::spawn(move || {
+                for _ in 0..20 {
+                    let results: Vec<KeyValue> = store
+                        .scan(&nth_key(0), &nth_key(WRITERS * PUTS_PER_WRITER))
+                        .unwrap();
+                    // sorted, no key twice, every value the one put_one writes
+                    for pair in results.windows(2) {
+                        assert!(pair[0].key < pair[1].key);
+                    }
+                    for entry in &results {
+                        assert_eq!(entry.value.len(), 100);
+                        assert!(entry.value.iter().all(|byte| *byte == entry.value[0]));
+                    }
+                }
+            }));
+        }
+        for handle in handles {
+            handle.join().unwrap();
+        }
+    });
+
+    let total: usize = WRITERS * PUTS_PER_WRITER;
+    assert_eq!(
+        store.scan(&nth_key(0), &nth_key(total)).unwrap(),
+        expected(0..total)
+    );
 }

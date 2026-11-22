@@ -1,4 +1,5 @@
 use crate::manifest::ManifestError;
+use crate::merge::MergeError;
 use crate::sstable::SstError;
 use crate::wal::WalError;
 
@@ -25,6 +26,9 @@ pub enum StoreError {
     Closed,
     // a bulk load was refused. nothing it wrote is left behind or visible
     Ingest(IngestError),
+    // a scan's merge stopped: an SSTable failed to read (I/O, corruption), or a source was
+    // out of order or had a duplicate seq (a bug). see MergeError
+    Merge(MergeError),
 }
 
 #[derive(Debug, PartialEq)]
@@ -43,6 +47,12 @@ pub enum IngestError {
 impl From<IngestError> for StoreError {
     fn from(error: IngestError) -> StoreError {
         StoreError::Ingest(error)
+    }
+}
+
+impl From<MergeError> for StoreError {
+    fn from(error: MergeError) -> StoreError {
+        StoreError::Merge(error)
     }
 }
 
